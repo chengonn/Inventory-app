@@ -1,0 +1,22 @@
+import { test, expect } from "@playwright/test";
+test("dashboard metrics, name/area/cabinet search, global low-stock and paging work on this viewport", async ({ page }) => {
+  test.skip(process.env.E2E_MOVES_FIXTURE !== "1", "Requires isolated DB runner");
+  test.setTimeout(90000);
+  await page.goto("/login"); await page.getByLabel("Email", { exact: true }).fill("owner@example.com"); await page.getByLabel("密碼", { exact: true }).fill("fixture-password"); await page.getByRole("button", { name: "登入", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(page.getByRole("region", { name: "庫存統計" })).toBeVisible();
+  for (const name of ["品項總數", "有庫存品項數", "低於安全庫存品項數", "待確認筆數", "今日入庫筆數", "今日出庫筆數"]) await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  const search = async (q: string) => { await page.getByLabel("搜尋品項、區域或櫃號", { exact: true }).fill(q); await page.getByRole("button", { name: "搜尋", exact: true }).click(); };
+  await search("Q-global");
+  const global = () => page.getByRole("article").filter({ has: page.getByRole("heading", { name: "Q-global", exact: true }) });
+  await expect(global()).toContainText("全櫃位總量 10.000"); await expect(global()).toContainText("Search-A / QA-001"); await expect(global()).toContainText("Search-B / QB-002");
+  await search("QA-001"); await expect(global()).toContainText("已確認數量 1.000"); await expect(global()).toContainText("全櫃位總量 10.000"); await expect(global()).not.toContainText("QB-002");
+  await search("Search-B"); await expect(global()).toContainText("9.000");
+  await page.goto("/inventory?low=1"); await expect(page.getByRole("heading", { name: "Q-low", exact: true })).toBeVisible(); await expect(global()).toHaveCount(0);
+  await page.goto("/inventory?q=Q-review"); await expect(page.getByRole("article")).toContainText("待確認 1 筆"); await expect(page.getByRole("article")).toContainText("尚無已確認庫存紀錄");
+  await page.goto("/inventory?q=Q-empty"); await expect(page.getByRole("article")).toContainText("安全庫存：未設定");
+  await search("Page-"); await expect(page.getByRole("article")).toHaveCount(20); await page.getByRole("link", { name: "下一頁", exact: true }).click(); await expect(page.getByRole("article")).toHaveCount(1); await expect(page.getByRole("navigation", { name: "庫存分頁" })).toContainText("第 2 / 2 頁");
+  await search("no-query-match"); await expect(page.getByText("沒有符合條件的庫存資料。", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});

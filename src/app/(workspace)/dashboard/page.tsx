@@ -1,26 +1,11 @@
 import Link from "next/link";
-import { requirePageActor } from "@/lib/auth/guard";
+import { dashboardData } from "@/lib/inventory/browse";
+import { InventorySearch } from "@/components/inventory-search";
 import { quickActions } from "@/lib/navigation";
-
+const types = { IN: "入庫", OUT: "出庫", ADJUST_GAIN: "盤盈", ADJUST_LOSS: "盤損", REVERSAL: "沖銷" };
 export default async function Dashboard() {
-  await requirePageActor();
-  return <>
-    <p className="mb-3 text-xs font-semibold tracking-[0.2em] text-teal-800">INVENTORY / 工作總覽</p>
-    <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">每一筆庫存，都有跡可循。</h1>
-    <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-500">查詢、領用與盤點，從這裡開始。</p>
-    <section aria-labelledby="actions-title" className="mt-10">
-      <h2 id="actions-title" className="mb-4 text-sm font-semibold">快速操作</h2>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {quickActions.map((action, index) => <Link key={action.href} href={action.href} className={`group rounded-2xl border p-5 transition-colors ${index === 0 ? "border-teal-900 bg-teal-900 text-white hover:bg-teal-800" : "border-slate-200 bg-white hover:border-teal-600"}`}>
-          <div className="mb-7 flex justify-between"><span className="font-mono text-xs opacity-60">0{index + 1}</span><span aria-hidden="true">↗</span></div>
-          <h3 className="text-lg font-semibold">{action.label}</h3><p className={`mt-2 text-xs leading-6 ${index === 0 ? "text-teal-100" : "text-slate-500"}`}>{action.description}</p>
-        </Link>)}
-      </div>
-    </section>
-    <section aria-labelledby="stock-title" className="mt-9 rounded-2xl border border-slate-200 bg-white">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-5"><h2 id="stock-title" className="font-semibold">庫存概況</h2><span className="rounded-full bg-amber-50 px-3 py-1 text-xs text-amber-900">尚未啟用</span></div>
-      <div className="px-6 py-12 text-center"><div aria-hidden="true" className="mx-auto mb-4 grid size-12 place-items-center rounded-2xl bg-slate-100 text-xl">▤</div><h3 className="font-semibold">等待連接庫存資料</h3><p className="mx-auto mt-3 max-w-md text-sm leading-7 text-slate-500">登入與主檔管理已可使用。庫存計算與 Excel 預覽匯入將於後續步驟啟用。</p></div>
-    </section>
-    <p className="mt-5 text-xs leading-6 text-slate-500">目前可維護品項與櫃位；庫存交易、盤點與 Excel 匯入尚未啟用。</p>
-  </>;
+  let data: Awaited<ReturnType<typeof dashboardData>>;
+  try { data = await dashboardData(); } catch { return <><h1 className="text-2xl font-semibold">工作總覽</h1><p role="alert" className="my-5">暫時無法讀取總覽，請重新整理或重新登入。</p></>; }
+  const stats = [["品項總數", data.metrics.total], ["有庫存品項數", data.metrics.stocked], ["低於安全庫存品項數", data.metrics.low], ["待確認筆數", data.metrics.review], ["今日入庫筆數", data.metrics.todayIn], ["今日出庫筆數", data.metrics.todayOut]] as const;
+  return <><h1 className="text-3xl font-semibold">工作總覽</h1><InventorySearch /><section aria-label="庫存統計" className="grid grid-cols-2 gap-3 xl:grid-cols-3">{stats.map(([label, value]) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-5"><h2 className="text-sm text-slate-600">{label}</h2><p className="mt-2 text-3xl font-semibold">{value}</p>{label === "低於安全庫存品項數" && <Link href="/inventory?low=1" className="mt-3 block min-h-11 py-2 text-sm text-teal-900 underline">查看低庫存</Link>}</div>)}</section><p className="mt-4 text-sm text-slate-500">包含停用品項與櫃位歷史。有庫存＝已確認總量大於零；今日筆數只計台北時間當日的已確認 IN／OUT，沖銷另列歷史。</p><section aria-label="快速操作" className="my-7 grid grid-cols-2 gap-3 xl:grid-cols-4">{quickActions.map((a) => <Link key={a.href} href={a.href} className="min-h-11 rounded-xl bg-teal-900 p-5 text-white">{a.label}</Link>)}</section><section aria-label="最近異動"><div className="mb-4 flex items-center justify-between"><h2 className="text-lg font-semibold">最近 10 筆異動</h2><Link href="/moves" className="min-h-11 py-2 text-sm underline">全部異動</Link></div><div className="grid gap-3 lg:grid-cols-2">{data.recent.map((r) => <article key={r.id} className="min-w-0 rounded-xl border border-slate-200 bg-white p-4"><h3 className="font-semibold">{types[r.type]} · {r.item}</h3><p>{r.location} · {r.quantity ?? "未知數量"}</p><p className="text-sm">{r.status === "CONFIRMED" ? "已確認" : r.status === "NEEDS_REVIEW" ? "待確認（不計庫存）" : "已忽略"}</p><p className="break-all text-xs text-slate-500">{r.moveNo}</p><time className="text-xs text-slate-500">{new Date(r.at).toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })}</time></article>)}</div>{!data.recent.length && <p>尚無異動紀錄。</p>}</section><p className="mt-6 text-xs text-slate-500">讀取時間：{new Date(data.asOf).toLocaleString("zh-TW", { timeZone: "Asia/Taipei" })}（台北）</p></>;
 }

@@ -1,14 +1,14 @@
 export class MoveError extends Error {}
 export type MoveInput = ReturnType<typeof parseMove>;
 const MAX = BigInt("999999999999999999"); // numeric(18,3) represented in thousandths.
-function text(form: FormData, name: string, max: number, required = false) {
+export function text(form: FormData, name: string, max: number, required = false) {
   const raw = form.get(name);
   if (raw !== null && typeof raw !== "string") throw new MoveError("欄位格式錯誤。");
   const value = (raw ?? "").trim();
   if ((required && !value) || value.length > max) throw new MoveError(`${name} 未填或超過長度限制。`);
   return value || null;
 }
-function id(form: FormData, name: string) {
+export function id(form: FormData, name: string) {
   const value = text(form, name, 10, true)!;
   if (!/^[1-9]\d*$/.test(value) || Number(value) > 2147483647) throw new MoveError("品項、櫃位或交易編號無效。");
   return Number(value);
@@ -16,13 +16,13 @@ function id(form: FormData, name: string) {
 export function decimalText(value: bigint) {
   return `${value / BigInt("1000")}.${String(value % BigInt("1000")).padStart(3, "0")}`;
 }
-function quantity(value: string | null, required = true): bigint | null {
+export function quantity(value: string | null, required = true): bigint | null {
   if (!value && !required) return null;
   if (!value || !/^\d{1,15}(\.\d{1,3})?$/.test(value)) throw new MoveError("數量須為非負十進位數，最多 15 位整數與 3 位小數。");
   const [whole, fraction = ""] = value.split(".");
   return BigInt(whole) * BigInt("1000") + BigInt(fraction.padEnd(3, "0"));
 }
-function requestId(form: FormData) {
+export function requestId(form: FormData) {
   const value = text(form, "requestId", 36, true)!;
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) throw new MoveError("請求編號無效，請重新整理。");
   return value.toLowerCase();

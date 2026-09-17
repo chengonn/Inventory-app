@@ -7,6 +7,9 @@ import { runtimePoolConfig } from "../../config/database";
 import { insertMove, insertReversal } from "../../src/lib/moves/transaction";
 import { parseMove } from "../../src/lib/moves/validation";
 import { readLocationStock } from "../../src/lib/inventory/query";
+import { parseStocktake } from "../../src/lib/stocktake/validation";
+import { commitStocktakeTransaction } from "../../src/lib/stocktake/transaction";
+import { readOverview } from "../../src/lib/inventory/browse";
 
 // Committed races need separate connections. All fixtures live in a newly owned,
 // disposable schema; business inventory and its immutable history are untouched.
@@ -51,6 +54,12 @@ function input(pair: { itemId: number; locationId: number }, kind = "OUT", quant
 }
 const move = (data: ReturnType<typeof input>) => db.$transaction((tx) => insertMove(tx, actor, data), options);
 const reverse = (originalId: number, requestId = crypto.randomUUID()) => db.$transaction((tx) => insertReversal(tx, actor, { originalId, requestId, note: "fixture reversal" }), options);
+function countInput(locationId: number, lines: [number, string][], requestId = crypto.randomUUID()) {
+  const form = new FormData(); form.set("locationId", String(locationId)); form.set("requestId", requestId); form.set("note", "physical count");
+  for (const [itemId, actual] of lines) form.set(`actual-${itemId}`, actual);
+  return parseStocktake(form);
+}
+const count = (data: ReturnType<typeof countInput>) => db.$transaction((tx) => commitStocktakeTransaction(tx, actor, data), options);
 it("two actual concurrent OUTs wait on the pair lock: one commits, one rejects, stock stays 3", async () => {
   const pair = await fixture();
   const blocker = await admin.connect();
@@ -130,4 +139,126 @@ it("reversal retry returns the existing receipt without another audit", async ()
   const first = await reverse(original.id, key), second = await reverse(original.id, key);
   expect(second).toMatchObject({ id: first.id, replayed: true });
   expect(await db.auditLog.count({ where: { entityId: String(first.id), entityType: "StockMove", actorEmail: actor.email, action: "REVERSE" } })).toBe(1);
+});
+it("stocktake batches gain, loss and zero difference with atomic actor audits", async () => {
+  const pair = await fixture(), ids = [pair.itemId];
+  for (let i = 0; i < 2; i++) {
+    const item = await db.item.create({ data: { name: crypto.randomUUID(), unit: "個" } }); ids.push(item.id);
+    await db.openingInventory.create({ data: { itemId: item.id, locationId: pair.locationId, normalizedQty: "10" } });
+  }
+  const data = countInput(pair.locationId, [[ids[0], "12.125"], [ids[1], "4"], [ids[2], "10"]]);
+  const result = await count(data);
+  expect(result.rows.map((r) => r.type)).toEqual(["ADJUST_GAIN", "ADJUST_LOSS", null]);
+  expect(result.rows.map((r) => r.signedQty)).toEqual(["2.125", "-6.000", "0.000"]);
+  expect(result.rows[2].moveId).toBeNull();
+  for (const r of result.rows) expect((await readLocationStock(db, r.itemId, pair.locationId)).toFixed(3)).toBe(r.actual);
+  expect(await db.stockMove.count({ where: { locationId: pair.locationId } })).toBe(2);
+  const audit = await db.auditLog.findFirstOrThrow({ where: { entityType: "Stocktake", entityId: `ST-${data.requestId}` } });
+  expect(audit.actorEmail).toBe(actor.email);
+  expect(audit.beforeJson).toEqual(ids.map((itemId) => ({ itemId, currentQty: "10.000" })));
+  for (const r of result.rows.filter((r) => r.moveId)) expect(await db.auditLog.count({ where: { entityType: "StockMove", entityId: String(r.moveId), actorEmail: actor.email } })).toBe(1);
+});
+it("zero-difference stocktake receipt prevents replay from undoing a later OUT", async () => {
+  const pair = await fixture(), data = countInput(pair.locationId, [[pair.itemId, "10"]]);
+  const first = await count(data); expect(first.rows[0].moveId).toBeNull();
+  await move(input(pair, "OUT", "2"));
+  const retry = await count(data); expect(retry.replayed).toBe(true); expect(retry.rows).toEqual(first.rows);
+  expect((await readLocationStock(db, pair.itemId, pair.locationId)).toFixed(3)).toBe("8.000");
+  expect(await db.stockMove.count({ where: pair })).toBe(1);
+  await expect(count({ ...data, lines: [{ itemId: pair.itemId, actual: "11.000" }] })).rejects.toThrow("不同內容");
+});
+it("stocktake waits for uncommitted OUT then recalculates delta from committed stock", async () => {
+  const pair = await fixture();
+  let release!: () => void, inserted!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const ready = new Promise<void>((resolve) => { inserted = resolve; });
+  const outgoing = db.$transaction(async (tx) => { const r = await insertMove(tx, actor, input(pair, "OUT", "7")); inserted(); await gate; return r; }, options);
+  // Attach rejection handler immediately so a DB failure cannot leave ready hanging.
+  await Promise.race([ready, outgoing]);
+  const counting = count(countInput(pair.locationId, [[pair.itemId, "5"]]));
+  try {
+    let waiting = 0;
+    for (let i = 0; i < 50 && !waiting; i++) {
+      waiting = (await admin.query("SELECT count(*)::int n FROM pg_locks WHERE locktype='advisory' AND classid=$1::oid AND objid=$2::oid AND objsubid=2 AND NOT granted", [pair.itemId, pair.locationId])).rows[0].n;
+      if (!waiting) await new Promise((r) => setTimeout(r, 50));
+    }
+    expect(waiting).toBe(1);
+  } finally { release(); }
+  await outgoing;
+  const result = await counting;
+  expect(result.rows[0]).toMatchObject({ current: "3.000", actual: "5.000", signedQty: "2.000", type: "ADJUST_GAIN" });
+  expect((await readLocationStock(db, pair.itemId, pair.locationId)).toFixed(3)).toBe("5.000");
+});
+it("concurrent stocktake retries create a single adjustment and receipt", async () => {
+  const pair = await fixture(), data = countInput(pair.locationId, [[pair.itemId, "4"]]);
+  const results = await Promise.all([count(data), count(data)]);
+  expect(results.map((r) => r.replayed).sort()).toEqual([false, true]);
+  expect(await db.stockMove.count({ where: pair })).toBe(1);
+  expect(await db.auditLog.count({ where: { entityType: "Stocktake", entityId: `ST-${data.requestId}` } })).toBe(1);
+});
+it("opposite input order in overlapping multi-item counts does not deadlock or double-adjust", async () => {
+  const pair = await fixture(), second = await db.item.create({ data: { name: crypto.randomUUID() } });
+  await db.openingInventory.create({ data: { itemId: second.id, locationId: pair.locationId, normalizedQty: "10" } });
+  const results = await Promise.all([count(countInput(pair.locationId, [[pair.itemId, "5"], [second.id, "5"]])), count(countInput(pair.locationId, [[second.id, "5"], [pair.itemId, "5"]]))]);
+  expect(results.flatMap((r) => r.rows).filter((r) => r.moveId)).toHaveLength(2);
+  expect(await db.stockMove.count({ where: { locationId: pair.locationId } })).toBe(2);
+});
+it("stocktake batch audit failure rolls back all adjustments and per-move audits", async () => {
+  const pair = await fixture(), data = countInput(pair.locationId, [[pair.itemId, "1"]]);
+  await expect(db.$transaction((tx) => {
+    const faulty = new Proxy(tx, { get(target, key) {
+      if (key === "auditLog") return { findFirst: tx.auditLog.findFirst.bind(tx.auditLog), create: async (args: Prisma.AuditLogCreateArgs) => { if (args.data.entityType === "Stocktake") throw new Error("batch audit unavailable"); return tx.auditLog.create(args); } };
+      return Reflect.get(target, key);
+    } });
+    return commitStocktakeTransaction(faulty, actor, data);
+  }, options)).rejects.toThrow("batch audit unavailable");
+  expect(await db.stockMove.count({ where: pair })).toBe(0);
+  expect((await readLocationStock(db, pair.itemId, pair.locationId)).toFixed(3)).toBe("10.000");
+  expect(await db.auditLog.count({ where: { entityId: `ST-${data.requestId}` } })).toBe(0);
+  await count(data); // Rollback released the locks and did not consume the request.
+});
+it("an inactive later row rolls back earlier rows in the same stocktake", async () => {
+  const pair = await fixture(), inactive = await db.item.create({ data: { name: crypto.randomUUID(), isActive: false } });
+  const data = countInput(pair.locationId, [[pair.itemId, "0"], [inactive.id, "5"]]);
+  await expect(count(data)).rejects.toThrow("停用");
+  expect(await db.stockMove.count({ where: { locationId: pair.locationId } })).toBe(0);
+  expect((await readLocationStock(db, pair.itemId, pair.locationId)).toFixed(3)).toBe("10.000");
+});
+it("stocktake ignores unknown quantities and adjustments can be reversed through the existing service", async () => {
+  const pair = await fixture("none");
+  await move(input(pair, "IN", "1", { mode: "container", containerType: "箱", containerCount: "99" }));
+  const result = await count(countInput(pair.locationId, [[pair.itemId, "2.125"]]));
+  expect(result.rows[0]).toMatchObject({ current: "0.000", signedQty: "2.125", type: "ADJUST_GAIN" });
+  await reverse(result.rows[0].moveId!);
+  expect((await readLocationStock(db, pair.itemId, pair.locationId)).toFixed(3)).toBe("0.000");
+});
+const overview = (now = new Date("2030-01-01T00:00:00Z")) => db.$transaction(async (tx) => { await tx.$executeRaw`SET TRANSACTION READ ONLY`; return readOverview(tx, now); }, { ...options, isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+it("dashboard uses confirmed global balances, pending counts, Taipei day bounds and exact thresholds", async () => {
+  const baseline = await overview(), pair = await fixture("2");
+  await db.item.update({ where: { id: pair.itemId }, data: { safetyStock: "10", isActive: false } });
+  const extra = await db.location.create({ data: { area: crypto.randomUUID(), cabinetNo: "other", isActive: false } });
+  await db.openingInventory.createMany({ data: [{ ...pair, normalizedQty: null, status: "NEEDS_REVIEW" }, { itemId: pair.itemId, locationId: extra.id, normalizedQty: "6" }, { ...pair, normalizedQty: "999", status: "IGNORED" }] });
+  for (const [at, type, qty, status] of [
+    ["2029-12-31T16:00:00Z", "IN", "1", "CONFIRMED"], ["2030-01-01T15:59:59.999Z", "OUT", "-1", "CONFIRMED"],
+    ["2029-12-31T15:59:59.999Z", "IN", "1", "CONFIRMED"], ["2030-01-01T16:00:00Z", "OUT", "-1", "CONFIRMED"],
+    ["2030-01-01T00:00:00Z", "IN", null, "NEEDS_REVIEW"],
+  ] as const) await db.stockMove.create({ data: { ...pair, moveNo: crypto.randomUUID(), occurredAt: new Date(at), type, status, signedQty: qty, normalizedQty: qty === null ? null : new Prisma.Decimal(qty).abs() } });
+  const data = await overview(), row = data.rows.find((r) => r.id === pair.itemId)!;
+  expect(row).toMatchObject({ current: "8.000", low: true, isActive: false, review: 2 }); expect(row.pairs).toHaveLength(2);
+  expect(data.metrics.total).toBe(baseline.metrics.total + 1); expect(data.metrics.low).toBe(baseline.metrics.low + 1);
+  expect(data.metrics.stocked).toBe(baseline.metrics.stocked + 1); expect(data.metrics.review).toBe(baseline.metrics.review + 2);
+  expect(data.metrics.todayIn).toBe(baseline.metrics.todayIn + 1); expect(data.metrics.todayOut).toBe(baseline.metrics.todayOut + 1);
+  expect(data.recent).toHaveLength(10); expect(data.recent[0].at).toBe("2030-01-01T16:00:00.000Z");
+});
+it("read-only RepeatableRead overview remains consistent across a concurrent committed IN", async () => {
+  const pair = await fixture("10");
+  await db.$transaction(async (tx) => {
+    await tx.$executeRaw`SET TRANSACTION READ ONLY`;
+    const before = await readOverview(tx, new Date());
+    await move(input(pair, "IN", "2"));
+    const after = await readOverview(tx, new Date());
+    expect(before.rows.find((r) => r.id === pair.itemId)?.current).toBe("10.000");
+    expect(after.rows.find((r) => r.id === pair.itemId)?.current).toBe("10.000");
+  }, { ...options, isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+  expect((await overview()).rows.find((r) => r.id === pair.itemId)?.current).toBe("12.000");
 });

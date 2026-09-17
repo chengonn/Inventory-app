@@ -6,7 +6,11 @@
 
 ## 目前進度
 
-Step 7 IN／OUT／reversal 已完成：預覽與確認、品項＋櫃位 transaction advisory lock、鎖後重讀庫存、原子 audit、防重送與沖銷保留歷史。189 項本機測試、14 項真實 DB 測試、15 項 E2E、lint、typecheck、build 通過；見 [Step 7 報告](docs/STEP-07.md)。`npm run test:e2e:moves` 會使用開發資料庫的暫存 schema 驗證真實寫入並自行清除。下一步為 Step 8 盤點，尚未開始。
+Step 9 Dashboard／Query 已完成：六項即時查詢統計、最近 10 筆異動、品項／區域／櫃號搜尋、低庫存與分頁。沿用已確認流水計算，低庫存以全櫃位總量比較，今日採台北時間；讀取使用一致的唯讀 snapshot。218 項本機測試、24 項真實 DB 測試、21 項 E2E、lint、typecheck、build 通過；見 [Step 9 報告](docs/STEP-09.md)。`npm run test:e2e:query` 重跑包含既有交易的完整回歸。下一步為 Step 10 Excel Preview／validation／SHA-256／transaction commit，尚未開始。
+
+Step 8 盤點已完成：選櫃位、實際數量預覽確認、依序鎖定後重算盤盈／盤損、整批 atomic audit、零差額不建立交易但保留防重送收據。203 項本機測試、22 項真實 DB 測試、18 項 E2E、lint、typecheck、build 通過；見 [Step 8 報告](docs/STEP-08.md)。執行 `npm run test:e2e:stocktake` 可重跑隔離資料庫的完整瀏覽器驗證。2026-09-17 已恢復先前被暫停的 Supabase 開發專案並重驗連線。Step 9 已接續完成（見上方）。
+
+Step 7 IN／OUT／reversal 已完成：預覽與確認、品項＋櫃位 transaction advisory lock、鎖後重讀庫存、原子 audit、防重送與沖銷保留歷史。當時 189 項本機測試、14 項真實 DB 測試、15 項 E2E、lint、typecheck、build 通過；見 [Step 7 報告](docs/STEP-07.md)。`npm run test:e2e:moves` 會使用開發資料庫的暫存 schema 驗證真實寫入並自行清除，目前也包含 Step 8 回歸。
 
 Step 6 庫存計算服務已完成，163 項測試、6 項真實 DB smoke、lint、typecheck、build 通過。只加總 CONFIRMED 期初與異動，尚未接入庫存查詢 UI；见 [Step 6 報告](docs/STEP-06.md)。
 
@@ -81,6 +85,7 @@ SHA-256：`8335A92AA52FA6447B6EE7F9328268A853F5655F0FC192206C9FDFF554ECB7B3`。
 - Next.js 安裝與 App Router：https://nextjs.org/docs/app/getting-started/installation
 - Next.js CSS：https://nextjs.org/docs/app/getting-started/css
 - Tailwind + Next.js：https://tailwindcss.com/docs/installation/framework-guides/nextjs
+
 
 
 

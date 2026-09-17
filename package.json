@@ -16,6 +16,8 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:e2e:moves": "node --use-system-ca scripts/test-moves-e2e.mjs",
+    "test:e2e:stocktake": "node --use-system-ca scripts/test-moves-e2e.mjs",
+    "test:e2e:query": "node --use-system-ca scripts/test-moves-e2e.mjs",
     "postinstall": "prisma generate",
     "pretest": "prisma generate",
     "db:generate": "prisma generate",

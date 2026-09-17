@@ -11,10 +11,10 @@ import { MoveError, type MoveInput, type parseReversal } from "./validation";
 export async function lockStockPair(tx: Prisma.TransactionClient, itemId: number, locationId: number) {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(${itemId}::int, ${locationId}::int)`;
 }
-async function lockRequest(tx: Prisma.TransactionClient, moveNo: string) {
+export async function lockRequest(tx: Prisma.TransactionClient, moveNo: string) {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${moveNo}, 0))`;
 }
-async function masters(tx: Prisma.TransactionClient, itemId: number, locationId: number, requireActive: boolean) {
+export async function masters(tx: Prisma.TransactionClient, itemId: number, locationId: number, requireActive: boolean) {
   // SHARE prevents concurrent master deactivation until this transaction ends.
   const items = await tx.$queryRaw<{ id: number; unit: string | null; isActive: boolean }[]>`SELECT id,unit,"isActive" FROM inventory."Item" WHERE id=${itemId} FOR SHARE`;
   const locations = await tx.$queryRaw<{ id: number; isActive: boolean }[]>`SELECT id,"isActive" FROM inventory."Location" WHERE id=${locationId} FOR SHARE`;

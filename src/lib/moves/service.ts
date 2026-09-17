@@ -7,7 +7,7 @@ import { readLocationStock } from "@/lib/inventory/query";
 import { insertMove, insertReversal } from "./transaction";
 import { MoveError, parseMove, parseReversal } from "./validation";
 
-async function actor(write: boolean) {
+export async function actor(write: boolean) {
   const result = await verifyActor(await (write ? createActionClient() : createClient()));
   if (result.status !== "allowed" || !result.actor) throw new MoveError("登入已失效或沒有交易權限，請重新登入。");
   return result.actor;

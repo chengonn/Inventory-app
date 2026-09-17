@@ -10,6 +10,8 @@ test("anonymous pages and API are guarded on desktop and mobile", async ({ page,
   expect(response.headers()["cache-control"]).toContain("no-store");
   await page.goto("/inventory");
   await expect(page).toHaveURL(/\/login$/);
+  await page.goto("/stocktake");
+  await expect(page).toHaveURL(/\/login$/);
 });
 
 test("login errors, allowed login, protected API, login redirect and logout", async ({ page }) => {
