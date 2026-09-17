@@ -1,0 +1,86 @@
+# 庫存管理 Web App V2
+
+> 2026-09-08 更新：Supabase 開發專案已建立，兩份 migration 已套用，runtime pooled connection 與完整 4 項雲端 smoke test 已通過。最新狀態見 [真實連線報告](docs/STEP-03-LIVE.md)。以下未設定專案的敘述為先前離線階段紀錄。
+
+本專案唯一規格來源為 [docs/V2.md](docs/V2.md)，原文複製自下載資料夾的「庫存管理系統_Codex實作規格_雲端版V2.md」。V1 的 SQLite、Windows/LAN Server 與 PIN 登入規格全部失效。
+
+## 目前進度
+
+Step 7 IN／OUT／reversal 已完成：預覽與確認、品項＋櫃位 transaction advisory lock、鎖後重讀庫存、原子 audit、防重送與沖銷保留歷史。189 項本機測試、14 項真實 DB 測試、15 項 E2E、lint、typecheck、build 通過；見 [Step 7 報告](docs/STEP-07.md)。`npm run test:e2e:moves` 會使用開發資料庫的暫存 schema 驗證真實寫入並自行清除。下一步為 Step 8 盤點，尚未開始。
+
+Step 6 庫存計算服務已完成，163 項測試、6 項真實 DB smoke、lint、typecheck、build 通過。只加總 CONFIRMED 期初與異動，尚未接入庫存查詢 UI；见 [Step 6 報告](docs/STEP-06.md)。
+
+Step 5 主檔管理已完成：/items 與 /locations 可新增、查詢、編輯、停用／重新啟用。140 項測試、5 項 DB smoke、12 項 E2E 通過；見 [Step 5 報告](docs/STEP-05.md)。db:smoke 含最終 rollback 的主檔寫入測試，僅用開發專案。
+
+Step 4 登入、登出與 server-side allowed-email guard 已加入；119 項測試、lint、typecheck、build 通過。真實登入／登出、隔離 Auth E2E 9/9 與匿名保護 3/3 均已驗收，見 [Step 4 報告](docs/STEP-04.md)。
+
+Step 1 已完成版面。Step 2 已加入 Supabase browser/server utilities、session refresh Proxy 與 cookie/cache 處理，完成本機測試。Supabase 開發專案與 Step 3 migration 已完成真實驗證；完整登入與 allowed-email guard 屬 Step 4。尚未完成全部業務流程與雲端部署，不可當成已上線系統。
+
+固定後續架構：Vercel + Supabase PostgreSQL + Supabase Auth + Prisma。業務資料只能由 server-side 存取，不允許公開註冊。Auth 完成前不可部署庫存資料。
+
+## 本機執行
+
+使用 Node.js 24.x LTS（本機驗證版本 24.18.0）及 npm。於本目錄執行：
+
+```powershell
+npm install
+npm run dev
+```
+
+瀏覽 http://localhost:3000 。尚未設定 Supabase 時，會顯示「Supabase 設定未完成」並回 HTTP 503；這是預期的設定缺漏狀態，不是已登入或已連線。詳細設定見 [Supabase 設定與 utilities 用法](docs/SUPABASE-SETUP.md)。本機開發服務不是最終雲端部署。
+
+如果此 Windows 的 npm 指向失效的 Roaming 路徑，先在目前 PowerShell 修正 PATH；若公司網路使用系統信任憑證，可使用系統 CA，請勿停用 TLS 憑證驗證：
+
+```powershell
+$env:Path = 'C:\Program Files\nodejs;' + $env:Path
+$env:NODE_OPTIONS = '--use-system-ca'
+& 'C:\Program Files\nodejs\npm.cmd' --version
+```
+
+若仍被失效的 PowerShell npm.ps1 攔截，可直接使用 `& 'C:\Program Files\nodejs\npm.cmd' run dev` 等完整命令，不需更動全域 npm。
+
+## 驗證
+
+```powershell
+npm run lint
+npm run typecheck
+npm test
+npm run build
+# 已設定有效專案，另一個終端先執行 npm run start，再執行：
+npm run test:e2e
+```
+
+沒有 Supabase 專案仍可執行 `npm test`（含實際 SDK + 攔截 HTTP 的離線 refresh 測試）。未設定狀態的 E2E：先執行 build 並另開終端啟動 start，再設定 `$env:E2E_UNCONFIGURED='1'` 後執行 `npm run test:e2e`。完整的離線版面 E2E 指令見 [Step 2 報告](docs/STEP-02.md)。
+
+E2E 使用已安裝的 Microsoft Edge，包含桌面、iPhone 尺寸與 Android 尺寸的 Chromium viewport。測試對象預設為 localhost:3000；需先以另一個終端啟動 npm run start。可設定 E2E_BASE_URL 指向已啟動的本機服務（Step 2 使用 http://127.0.0.1:3032 的 production build）。使用分開啟動的服務，避免 Windows 環境中 Playwright 自動停止 webServer 時無法結束。這不是實體 iPhone Safari 驗證，也不是正式版手機業務驗收。
+
+## 環境與後續步驟
+
+`.env.example` 僅列變數名稱，沒有密鑰。建立 Supabase 開發專案後複製為 `.env.local`，填入 HTTPS URL 與 `sb_publishable_` key。環境變數格式錯誤時，predev/prebuild 會中止，且不輸出設定值。本專案僅准許這兩個 public 變數。`ALLOWED_USER_EMAIL` 僅供 server 使用。禁止將 database credentials 或 service-role key 加上 `NEXT_PUBLIC_` 前綴。
+
+Step 3 已安裝 Prisma 7.10.0，建立 PostgreSQL schema、兩份 migration 與分離的 runtime/migration 連線設定，完成離線驗證。兩份 migration 已套用 Supabase 開發專案，完整雲端 smoke test 4/4 通過。請閱讀 [資料庫設定](docs/DATABASE-SETUP.md) 與 [Step 3 報告](docs/STEP-03.md)。
+
+Step 4 完成登入、登出與 server-side 白名單驗證；初始帳號由管理者建立，關閉公開 signup。
+
+Step 5–11 依 docs/V2.md 逐步完成主檔、庫存計算、交易、盤點、查詢、Excel Preview → Confirm、Review 與備份匯出。每一步 tests/lint/typecheck 通過才繼續。
+
+Step 12–13 才設定 Vercel Preview/Production、production migration 與 HTTPS deployment，執行 production smoke test。Preview 必須使用獨立測試資料庫或關閉 mutation；不自動在每次 request 跑 migration。
+
+後續 README 將於對應步驟補齊已驗證的帳號建立、密碼重設、Prisma migration、首次匯入、Vercel env 與部署、手機 HTTPS 使用、備份復原流程。Supabase backup/PITR 能力需依實際方案核對：https://supabase.com/docs/guides/platform/backups 。
+
+## Excel 來源
+
+已找到 `C:\Users\cheng\Downloads\庫存整理版_無巨集主檔版_品項下拉已修正.xlsx`。
+
+SHA-256：`8335A92AA52FA6447B6EE7F9328268A853F5655F0FC192206C9FDFF554ECB7B3`。
+
+目前只確認檔案存在與雜湊，尚未解析或匯入。原始 Excel 不放入 Git 或 public 資料夾。
+
+## 官方依據
+
+- Next.js 安裝與 App Router：https://nextjs.org/docs/app/getting-started/installation
+- Next.js CSS：https://nextjs.org/docs/app/getting-started/css
+- Tailwind + Next.js：https://tailwindcss.com/docs/installation/framework-guides/nextjs
+
+
+

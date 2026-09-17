@@ -1,0 +1,8 @@
+@import "tailwindcss";
+
+:root { color-scheme: light; }
+body { margin: 0; background: #f6f8f8; color: #172b35; font-family: Arial, "Microsoft JhengHei", sans-serif; }
+button, a, input { -webkit-tap-highlight-color: transparent; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid #0f766e; outline-offset: 4px; }
+::selection { background: #ccfbf1; }
