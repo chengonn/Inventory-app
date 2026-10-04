@@ -1,4 +1,5 @@
 import "server-only";
+import { mutationsBlocked } from "@/lib/deployment";
 import { Prisma } from "@/generated/prisma/client";
 import { createActionClient, createClient } from "@/lib/supabase/server";
 import { verifyActor } from "@/lib/auth/policy";
@@ -8,6 +9,7 @@ import { insertMove, insertReversal } from "./transaction";
 import { MoveError, parseMove, parseReversal } from "./validation";
 
 export async function actor(write: boolean) {
+  if (write && mutationsBlocked()) throw new MoveError("此環境僅供查詢，已停用庫存與主檔寫入。");
   const result = await verifyActor(await (write ? createActionClient() : createClient()));
   if (result.status !== "allowed" || !result.actor) throw new MoveError("登入已失效或沒有交易權限，請重新登入。");
   return result.actor;

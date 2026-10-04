@@ -18,6 +18,9 @@
     "test:e2e:moves": "node --use-system-ca scripts/test-moves-e2e.mjs",
     "test:e2e:stocktake": "node --use-system-ca scripts/test-moves-e2e.mjs",
     "test:e2e:query": "node --use-system-ca scripts/test-moves-e2e.mjs",
+    "test:e2e:import": "node --use-system-ca scripts/test-moves-e2e.mjs",
+    "test:e2e:review": "node --use-system-ca scripts/test-moves-e2e.mjs",
+    "test:production:anonymous": "node scripts/production-smoke.mjs",
     "postinstall": "prisma generate",
     "pretest": "prisma generate",
     "db:generate": "prisma generate",
@@ -36,7 +39,9 @@
     "pg": "8.23.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "server-only": "0.0.1"
+    "server-only": "0.0.1",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.4.3",

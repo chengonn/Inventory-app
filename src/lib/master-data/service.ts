@@ -1,4 +1,5 @@
 import "server-only";
+import { mutationsBlocked } from "@/lib/deployment";
 import { createActionClient, createClient } from "@/lib/supabase/server";
 import { verifyActor } from "@/lib/auth/policy";
 import { getPrisma } from "@/lib/prisma";
@@ -6,6 +7,7 @@ import { Prisma } from "@/generated/prisma/client";
 import { masterKind, MasterDataError, parseIdentity, parseMaster, type MasterKind } from "./validation";
 
 async function actor(writable: boolean) {
+  if (writable && mutationsBlocked()) throw new MasterDataError("此環境僅供查詢，已停用庫存與主檔寫入。");
   const result = await verifyActor(await (writable ? createActionClient() : createClient()));
   if (result.status !== "allowed" || !result.actor) throw new MasterDataError("沒有操作權限或登入已失效，請重新登入。");
   return result.actor;

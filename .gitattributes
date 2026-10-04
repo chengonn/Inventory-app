@@ -1,0 +1,3 @@
+# Applied migrations and the source-of-truth document must keep their exact bytes.
+prisma/migrations/**/migration.sql -text whitespace=cr-at-eol
+docs/V2.md -text

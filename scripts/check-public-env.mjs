@@ -15,6 +15,10 @@ try {
     console.info("Supabase public 環境變數格式檢查通過（尚未驗證雲端連線）。");
   }
 } catch {
+  console.error("檢查階段資訊（只列名稱，不列值）：", {
+    vercel: process.env.VERCEL === "1",
+    publicNames: Object.keys(process.env).filter((name) => name.startsWith("NEXT_PUBLIC_")),
+  });
   console.error("環境變數檢查失敗：僅允許公開 Supabase URL 與 sb_publishable_ key。請勿將 secret、service-role 或資料庫憑證設為 NEXT_PUBLIC_*；未啟動編譯，亦未輸出變數值。");
   process.exitCode = 1;
 }

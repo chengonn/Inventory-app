@@ -6,7 +6,15 @@
 
 ## 目前進度
 
-Step 9 Dashboard／Query 已完成：六項即時查詢統計、最近 10 筆異動、品項／區域／櫃號搜尋、低庫存與分頁。沿用已確認流水計算，低庫存以全櫃位總量比較，今日採台北時間；讀取使用一致的唯讀 snapshot。218 項本機測試、24 項真實 DB 測試、21 項 E2E、lint、typecheck、build 通過；見 [Step 9 報告](docs/STEP-09.md)。`npm run test:e2e:query` 重跑包含既有交易的完整回歸。下一步為 Step 10 Excel Preview／validation／SHA-256／transaction commit，尚未開始。
+Step 12 正在準備 Vercel 部署；部署設定、Preview 寫入保護及匿名 smoke script 已完成，274 項本機測試、lint、typecheck、build 通過。正式資料庫選擇與部署仍待完成，見 [Step 12 進度](docs/STEP-12.md) 及 [部署流程](docs/VERCEL-DEPLOYMENT.md)。目前沒有 production smoke 成功紀錄。
+
+
+Step 11 Review／Export 已完成：待確認資料的預覽確認／忽略、鎖後重算庫存與原子 audit、防重送、庫存與篩選異動匯出、完整 Excel 備份。271 項本機測試（另 1 skipped）、36 項真實 DB 測試（另 2 skipped）、27 項 E2E、lint、typecheck、production build 通過；見 [Step 11 報告](docs/STEP-11.md)。下一步為 Step 12 Vercel 環境與部署，目前尚未上線。
+
+
+Step 10 Excel 匯入已完成：四張工作表的 server-side 解析／驗證、逐筆 Preview、勾選 Confirm、SHA-256 防重複、鎖後庫存檢查與整批 transaction／audit。241 項本機測試（含選用原始檔）、33 項真實 DB 檢查、24 項完整 E2E＋3 項補充匯入 E2E、lint、typecheck、build 通過；見 [Step 10 報告](docs/STEP-10.md)。原始 Excel 僅完成唯讀預覽，尚未匯入；40 筆可確認、143 筆需人工核對換算或單位。使用者在 `/import-export` 預覽並確認後才 commit。Step 11 已接續實作，驗證紀錄見 [Step 11 報告](docs/STEP-11.md)。
+
+Step 9 Dashboard／Query 已完成：六項即時查詢統計、最近 10 筆異動、品項／區域／櫃號搜尋、低庫存與分頁。沿用已確認流水計算，低庫存以全櫃位總量比較，今日採台北時間；讀取使用一致的唯讀 snapshot。218 項本機測試、24 項真實 DB 測試、21 項 E2E、lint、typecheck、build 通過；見 [Step 9 報告](docs/STEP-09.md)。`npm run test:e2e:query` 重跑包含既有交易的完整回歸。Step 10 已接續完成（見上方）。
 
 Step 8 盤點已完成：選櫃位、實際數量預覽確認、依序鎖定後重算盤盈／盤損、整批 atomic audit、零差額不建立交易但保留防重送收據。203 項本機測試、22 項真實 DB 測試、18 項 E2E、lint、typecheck、build 通過；見 [Step 8 報告](docs/STEP-08.md)。執行 `npm run test:e2e:stocktake` 可重跑隔離資料庫的完整瀏覽器驗證。2026-09-17 已恢復先前被暫停的 Supabase 開發專案並重驗連線。Step 9 已接續完成（見上方）。
 
@@ -78,7 +86,7 @@ Step 12–13 才設定 Vercel Preview/Production、production migration 與 HTTP
 
 SHA-256：`8335A92AA52FA6447B6EE7F9328268A853F5655F0FC192206C9FDFF554ECB7B3`。
 
-目前只確認檔案存在與雜湊，尚未解析或匯入。原始 Excel 不放入 Git 或 public 資料夾。
+已完成唯讀解析與預覽：154 品項、160 期初、23 異動、20 移除歷史；40 筆可確認、143 筆待人工核對。原始 Excel 尚未匯入，也不放入 Git 或 public 資料夾。請於 App 上傳、核對 Preview 並勾選 Confirm 後提交。
 
 ## 官方依據
 
@@ -89,3 +97,7 @@ SHA-256：`8335A92AA52FA6447B6EE7F9328268A853F5655F0FC192206C9FDFF554ECB7B3`。
 
 
 
+
+## Review 與 Excel 備份
+
+在待確認頁逐筆補齊數量／單位並預覽後確認，或填寫原因忽略；原文與歷史保留。庫存與異動頁可匯出當前篩選的全部頁面；Excel 匯入／匯出頁可下載完整業務備份。數量以文字保存精度；備份不是四表匯入模板，也沒有自動還原入口。長 audit JSON 的重組、檔案上限及資料庫備份注意事項見 [Step 11 報告](docs/STEP-11.md)。
