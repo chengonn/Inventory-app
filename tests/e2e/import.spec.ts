@@ -1,0 +1,37 @@
+import { test, expect } from "@playwright/test";
+import { bytes, workbook } from "../fixtures/import-workbook";
+test("Excel preview, explicit confirmation, inventory and duplicate rejection work on this viewport", async ({ page }, info) => {
+  test.skip(process.env.E2E_MOVES_FIXTURE !== "1", "Requires isolated DB runner");
+  test.setTimeout(90000);
+  const name = `Import-${info.project.name}`, buffer = bytes(workbook(name));
+  await page.goto("/login"); await page.getByLabel("Email", { exact: true }).fill("owner@example.com"); await page.getByLabel("密碼", { exact: true }).fill("fixture-password"); await page.getByRole("button", { name: "登入", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard$/); await page.goto("/import-export");
+  await page.getByLabel("Excel 檔案", { exact: true }).setInputFiles({ name: "bad.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: Buffer.from("not zip") });
+  await page.getByRole("button", { name: "預覽 Excel", exact: true }).click();
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(".xlsx");
+  await page.getByLabel("Excel 檔案", { exact: true }).setInputFiles({ name: "fixture.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer });
+  await page.getByRole("button", { name: "預覽 Excel", exact: true }).click();
+  const preview = page.getByRole("region", { name: "Excel 匯入預覽" });
+  await expect(preview).toContainText("已確認 2 筆／待確認 0 筆");
+  await expect(preview).toContainText("22.000");
+  await expect(preview).toContainText("出庫 · 庫存增減 -2.000");
+  await expect(page.getByRole("button", { name: "確認匯入", exact: true })).toBeDisabled();
+  await page.getByRole("checkbox").check();
+  await page.getByLabel("Excel 檔案", { exact: true }).setInputFiles({ name: "selected-again.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer });
+  await expect(preview).toHaveCount(0);
+  await page.getByRole("button", { name: "預覽 Excel", exact: true }).click();
+  await expect(page.getByRole("button", { name: "確認匯入", exact: true })).toBeDisabled();
+  await page.screenshot({ path: `test-results/import-preview-${info.project.name}.png`, fullPage: true });
+  // Preview alone must not have created an item or ledger row.
+  const second = await page.context().newPage(); await second.goto(`/inventory?q=${name}`);
+  await expect(second.getByText("沒有符合條件的庫存資料。", { exact: true })).toBeVisible(); await second.close();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole("checkbox").check(); await page.getByRole("button", { name: "確認匯入", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("匯入完成", { timeout: 30000 });
+  await page.goto(`/inventory?q=${name}`); await expect(page.getByRole("article")).toContainText("全櫃位總量 20.000");
+  await page.goto("/import-export");
+  await page.getByLabel("Excel 檔案", { exact: true }).setInputFiles({ name: "renamed.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer });
+  await page.getByRole("button", { name: "預覽 Excel", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Excel 匯入預覽" })).toContainText("此檔案已匯入");
+  await expect(page.getByRole("button", { name: "確認匯入", exact: true })).toHaveCount(0);
+});

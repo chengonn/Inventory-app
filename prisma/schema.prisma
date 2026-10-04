@@ -1,0 +1,176 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  schemas  = ["inventory"]
+}
+
+enum MoveType {
+  IN
+  OUT
+  ADJUST_GAIN
+  ADJUST_LOSS
+  REVERSAL
+
+  @@schema("inventory")
+}
+
+enum DataStatus {
+  CONFIRMED
+  NEEDS_REVIEW
+  IGNORED
+
+  @@schema("inventory")
+}
+
+model Item {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  unit        String?
+  safetyStock Decimal? @db.Decimal(18, 3)
+  note        String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  openingInventory OpeningInventory[]
+  moves            StockMove[]
+
+  @@schema("inventory")
+}
+
+model Location {
+  id          Int      @id @default(autoincrement())
+  area        String
+  cabinetNo   String
+  displayName String?
+  note        String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  openingInventory OpeningInventory[]
+  moves            StockMove[]
+
+  @@unique([area, cabinetNo])
+  @@schema("inventory")
+}
+
+model OpeningInventory {
+  id                Int        @id @default(autoincrement())
+  itemId            Int
+  locationId        Int
+  rawQuantityText   String?
+  containerType     String?
+  containerCount    Decimal?   @db.Decimal(18, 3)
+  unitsPerContainer Decimal?   @db.Decimal(18, 3)
+  looseQty          Decimal?   @db.Decimal(18, 3)
+  unit              String?
+  normalizedQty     Decimal?   @db.Decimal(18, 3)
+  status            DataStatus @default(CONFIRMED)
+  sourceSheet       String?
+  sourceCell        String?
+  note              String?
+  importBatchId     Int?
+  createdAt         DateTime   @default(now()) @db.Timestamptz(3)
+
+  item        Item         @relation(fields: [itemId], references: [id])
+  location    Location     @relation(fields: [locationId], references: [id])
+  importBatch ImportBatch? @relation(fields: [importBatchId], references: [id])
+
+  @@index([itemId, locationId])
+  @@schema("inventory")
+}
+
+model StockMove {
+  id                Int        @id @default(autoincrement())
+  moveNo            String     @unique
+  occurredAt        DateTime   @db.Timestamptz(3)
+  type              MoveType
+  itemId            Int
+  locationId        Int
+  rawQuantityText   String?
+  containerType     String?
+  containerCount    Decimal?   @db.Decimal(18, 3)
+  unitsPerContainer Decimal?   @db.Decimal(18, 3)
+  looseQty          Decimal?   @db.Decimal(18, 3)
+  unit              String?
+  normalizedQty     Decimal?   @db.Decimal(18, 3)
+  signedQty         Decimal?   @db.Decimal(18, 3)
+  status            DataStatus @default(CONFIRMED)
+  operator          String?
+  documentNo        String?
+  note              String?
+  reversalOfMoveId  Int?       @unique
+  reversalOfMove    StockMove? @relation("MoveReversal", fields: [reversalOfMoveId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  reversedByMove    StockMove? @relation("MoveReversal")
+  importBatchId     Int?
+  createdAt         DateTime   @default(now()) @db.Timestamptz(3)
+
+  item        Item         @relation(fields: [itemId], references: [id])
+  location    Location     @relation(fields: [locationId], references: [id])
+  importBatch ImportBatch? @relation(fields: [importBatchId], references: [id])
+
+  @@index([itemId, locationId, occurredAt])
+  @@index([occurredAt])
+  @@schema("inventory")
+}
+
+model ArchivedRecord {
+  id                Int       @id @default(autoincrement())
+  removedAt         DateTime? @db.Timestamptz(3)
+  area              String?
+  cabinetNo         String?
+  itemName          String
+  rawQuantityText   String?
+  containerType     String?
+  containerCount    Decimal?  @db.Decimal(18, 3)
+  unitsPerContainer Decimal?  @db.Decimal(18, 3)
+  looseQty          Decimal?  @db.Decimal(18, 3)
+  unit              String?
+  normalizedQty     Decimal?  @db.Decimal(18, 3)
+  originalStatus    String?
+  sourceCell        String?
+  removalReason     String?
+  note              String?
+  importBatchId     Int?
+  createdAt         DateTime  @default(now()) @db.Timestamptz(3)
+
+  importBatch ImportBatch? @relation(fields: [importBatchId], references: [id])
+
+  @@schema("inventory")
+}
+
+model ImportBatch {
+  id             Int      @id @default(autoincrement())
+  fileName       String
+  fileHash       String   @unique
+  importedAt     DateTime @default(now()) @db.Timestamptz(3)
+  itemCount      Int      @default(0)
+  inventoryCount Int      @default(0)
+  moveCount      Int      @default(0)
+  reviewCount    Int      @default(0)
+
+  openingInventory OpeningInventory[]
+  moves            StockMove[]
+  archives         ArchivedRecord[]
+
+  @@schema("inventory")
+}
+
+model AuditLog {
+  id         Int      @id @default(autoincrement())
+  action     String
+  entityType String
+  entityId   String?
+  actorEmail String?
+  beforeJson Json?
+  afterJson  Json?
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([createdAt])
+  @@schema("inventory")
+}
