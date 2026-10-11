@@ -7,11 +7,13 @@ import { getPrisma } from "@/lib/prisma";
 import { readLocationStock } from "@/lib/inventory/query";
 import { insertMove, insertReversal } from "./transaction";
 import { MoveError, parseMove, parseReversal } from "./validation";
+import { enforceRateLimit } from "@/lib/security/rate-limit";
 
 export async function actor(write: boolean) {
   if (write && mutationsBlocked()) throw new MoveError("此環境僅供查詢，已停用庫存與主檔寫入。");
   const result = await verifyActor(await (write ? createActionClient() : createClient()));
   if (result.status !== "allowed" || !result.actor) throw new MoveError("登入已失效或沒有交易權限，請重新登入。");
+  if (write) await enforceRateLimit("write");
   return result.actor;
 }
 export async function moveOptions() {

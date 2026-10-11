@@ -5,11 +5,16 @@ import { verifyActor } from "@/lib/auth/policy";
 import { getPrisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { masterKind, MasterDataError, parseIdentity, parseMaster, type MasterKind } from "./validation";
+import { enforceRateLimit, RateLimitError } from "@/lib/security/rate-limit";
 
 async function actor(writable: boolean) {
   if (writable && mutationsBlocked()) throw new MasterDataError("此環境僅供查詢，已停用庫存與主檔寫入。");
   const result = await verifyActor(await (writable ? createActionClient() : createClient()));
   if (result.status !== "allowed" || !result.actor) throw new MasterDataError("沒有操作權限或登入已失效，請重新登入。");
+  if (writable) {
+    try { await enforceRateLimit("write"); }
+    catch (error) { throw new MasterDataError(error instanceof RateLimitError ? error.message : "服務暫時無法使用，請稍後再試。"); }
+  }
   return result.actor;
 }
 export async function listMasters(kind: MasterKind, search: string, status: string, page: number) {
@@ -43,6 +48,7 @@ export async function saveMaster(kindValue: string, form: FormData) {
       let after;
       if ("name" in data) {
         if (identity) {
+          if (before && "unit" in before && before.unit !== data.unit) throw new MasterDataError("既有品項的單位不可直接變更，以免重新解讀歷史庫存。請另建不同名稱的品項。");
           const changed = await tx.item.updateMany({ where: identity, data });
           if (changed.count !== 1) throw new MasterDataError("資料已被更新，請重新整理後再修改。");
           after = await tx.item.findUniqueOrThrow({ where: { id: identity.id } });
@@ -55,7 +61,7 @@ export async function saveMaster(kindValue: string, form: FormData) {
         } else after = await tx.location.create({ data });
       }
       await tx.auditLog.create({ data: { action: identity ? "UPDATE" : "CREATE", entityType: kind === "items" ? "Item" : "Location", entityId: String(after.id), actorEmail: currentActor.email, beforeJson: before ? json(before) : Prisma.DbNull, afterJson: json(after) } });
-    });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, maxWait: 5000, timeout: 15000 });
   } catch (error) {
     if (error instanceof MasterDataError) throw error;
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") throw new MasterDataError(kind === "items" ? "品項名稱已存在；若已停用，請重新啟用原品項。" : "此區域與櫃號已存在。");

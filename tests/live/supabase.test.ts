@@ -19,7 +19,7 @@ it("has both migrations applied with matching local SQL checksums", async () => 
   const rows = await prisma.$queryRaw<{ migration_name: string; checksum: string; finished: boolean }[]>`
     SELECT migration_name, checksum, finished_at IS NOT NULL AS finished
     FROM inventory._prisma_migrations WHERE rolled_back_at IS NULL ORDER BY migration_name`;
-  const names = ["202609070001_initial_inventory", "202609070002_inventory_integrity"];
+  const names = ["202609070001_initial_inventory", "202609070002_inventory_integrity", "202610080001_rate_limit"];
   expect(rows.map((r) => r.migration_name)).toEqual(names);
   for (const row of rows) {
     expect(row.finished).toBe(true);
@@ -31,7 +31,7 @@ it("has seven business tables with RLS and no browser schema access", async () =
   const rows = await prisma.$queryRaw<{ relname: string; relrowsecurity: boolean }[]>`
     SELECT relname,relrowsecurity FROM pg_class
     WHERE relnamespace='inventory'::regnamespace AND relkind='r' AND relname <> '_prisma_migrations'`;
-  expect(rows.map((r) => r.relname).sort()).toEqual(["ArchivedRecord", "AuditLog", "ImportBatch", "Item", "Location", "OpeningInventory", "StockMove"]);
+  expect(rows.map((r) => r.relname).sort()).toEqual(["ArchivedRecord", "AuditLog", "ImportBatch", "Item", "Location", "OpeningInventory", "RateLimitBucket", "StockMove"]);
   expect(rows.every((r) => r.relrowsecurity)).toBe(true);
   const grants = await prisma.$queryRaw<{ allowed: boolean }[]>`
     SELECT has_schema_privilege('anon','inventory','USAGE')
@@ -43,7 +43,7 @@ it("can read all seven models in a read-only transaction", async () => {
   const counts = await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SET TRANSACTION READ ONLY`;
     return Promise.all([tx.item.count(), tx.location.count(), tx.openingInventory.count(),
-      tx.stockMove.count(), tx.archivedRecord.count(), tx.importBatch.count(), tx.auditLog.count()]);
+      tx.stockMove.count(), tx.archivedRecord.count(), tx.importBatch.count(), tx.auditLog.count(), tx.rateLimitBucket.count()]);
   });
   expect(counts.every((count) => Number.isInteger(count) && count >= 0)).toBe(true);
 });

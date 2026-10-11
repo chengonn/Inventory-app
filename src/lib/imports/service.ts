@@ -7,9 +7,11 @@ import { getPrisma } from "@/lib/prisma";
 import { counts, MAX_FILE_BYTES } from "./model";
 import { parseWorkbook } from "./parse";
 import { commitImportTransaction, inspectImport, json } from "./transaction";
+import { requireLegacyImport } from "./policy";
 
 export async function previewImport(form: FormData) {
   const user = await actor(true);
+  requireLegacyImport();
   const file = form.get("file");
   if (!(file instanceof File) || file.size === 0 || file.size > MAX_FILE_BYTES) throw new MoveError("請選擇 3 MB 以內的 .xlsx 檔案。");
   const plan = parseWorkbook(Buffer.from(await file.arrayBuffer()), file.name);
@@ -26,6 +28,7 @@ export async function previewImport(form: FormData) {
 }
 export async function confirmImport(form: FormData) {
   const user = await actor(true);
+  requireLegacyImport();
   const token = form.get("token");
   if (typeof token !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(token) || form.get("confirmed") !== "yes") throw new MoveError("請先預覽並勾選確認。");
   return getPrisma().$transaction((tx) => commitImportTransaction(tx, user, token), { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, maxWait: 10000, timeout: 60000 });

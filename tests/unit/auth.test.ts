@@ -8,6 +8,7 @@ vi.mock("../../src/lib/supabase/server", () => ({
 import { allowedEmail, verifyActor } from "../../src/lib/auth/policy";
 import { requirePageActor } from "../../src/lib/auth/guard";
 import { login, logout } from "../../src/app/login/actions";
+import { enforceRateLimit, RateLimitError } from "../../src/lib/security/rate-limit";
 const client = { auth: mocks } as unknown as SupabaseClient;
 const user = { id: "actor-id", email: "owner@example.com", email_confirmed_at: "2026-09-08", is_anonymous: false };
 beforeEach(() => {
@@ -59,6 +60,16 @@ it("does not leak SDK error details or submitted passwords", async () => {
 });
 it("rejects malformed form without making an Auth call", async () => {
   await login({ error: "" }, new FormData());
+  expect(mocks.signInWithPassword).not.toHaveBeenCalled();
+});
+it("blocks login before calling Supabase when distributed limiter rejects", async () => {
+  vi.mocked(enforceRateLimit).mockRejectedValueOnce(new RateLimitError("操作次數過多"));
+  expect(await login({ error: "" }, form())).toEqual({ error: "操作次數過多" });
+  expect(mocks.signInWithPassword).not.toHaveBeenCalled();
+});
+it("fails login closed and masks database errors if the limiter is unavailable", async () => {
+  vi.mocked(enforceRateLimit).mockRejectedValueOnce(new Error("private database password"));
+  expect(await login({ error: "" }, form())).toEqual({ error: "登入服務暫時無法使用，請稍後再試。" });
   expect(mocks.signInWithPassword).not.toHaveBeenCalled();
 });
 it("logout clears the current session only", async () => {

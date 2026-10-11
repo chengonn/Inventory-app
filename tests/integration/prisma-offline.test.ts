@@ -9,7 +9,11 @@ it("initial SQL still matches Prisma's offline schema diff", () => {
   expect(result.status, result.stderr).toBe(0);
   const initial = readFileSync("prisma/migrations/202609070001_initial_inventory/migration.sql", "utf8");
   const normalize = (sql: string) => sql.replace(/^\uFEFF/, "").replace(/^BEGIN;\s*/, "").replace(/\s*COMMIT;\s*$/, "").replace(/\r\n/g, "\n").trim();
-  expect(normalize(initial)).toBe(normalize(result.stdout));
+  // The seven original models remain byte-compatible; the additive rate bucket
+  // migration and its constraints/privileges are executed in rate-limit.test.ts.
+  const rateTable = /-- CreateTable\nCREATE TABLE "inventory"\."RateLimitBucket" \([\s\S]*?\n\);\n\n/;
+  expect(result.stdout.replace(/\r\n/g, "\n")).toMatch(rateTable);
+  expect(normalize(initial)).toBe(normalize(result.stdout.replace(/\r\n/g, "\n").replace(rateTable, "")));
 }, 25_000);
 
 it("release preflight stops before migration when DIRECT_URL is absent", () => {

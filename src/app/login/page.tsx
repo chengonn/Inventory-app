@@ -18,6 +18,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
     <section className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-7 shadow-sm sm:p-9">
       <p className="mb-3 text-sm font-medium text-teal-800">庫存管理 V2</p>
       <h1 className="text-2xl font-semibold">登入庫存管理</h1>
+      {process.env.INVENTORY_DEMO === "true" && <p className="mt-3 rounded-lg bg-teal-50 p-3 text-sm text-teal-900">作品展示版。請使用專案作者提供的展示帳號與密碼，登入後可手動建立品項及體驗庫存操作。</p>}
       <p className="mt-3 text-sm leading-6 text-slate-500">僅限授權帳號使用。忘記密碼請聯絡管理者。</p>
       {message && <p role="status" className="mt-5 text-sm leading-6 text-amber-900">{message}</p>}
       <LoginForm disabled={!allowedEmail()} />

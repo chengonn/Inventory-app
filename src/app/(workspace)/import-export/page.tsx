@@ -1,9 +1,11 @@
 import { ExportPanel } from "@/components/export-panel";
 import { ImportForm } from "@/components/import-form";
 import { importHistory } from "@/lib/imports/service";
+import { legacyImportEnabled } from "@/lib/imports/policy";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 export default async function ImportPage() {
+  if (!legacyImportEnabled()) return <div className="space-y-6"><h1 className="text-2xl font-semibold">匯出備份</h1><p>下載庫存與歷史紀錄。新增資料請使用「新增品項與庫存」。</p><ExportPanel /></div>;
   let history: Awaited<ReturnType<typeof importHistory>>;
   try { history = await importHistory(); }
   catch { return <p role="alert">無法載入匯入紀錄，請確認登入與資料庫連線後重試。</p>; }

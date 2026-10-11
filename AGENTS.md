@@ -1,5 +1,7 @@
 # Project instructions
 
+- Latest user scope (2026-10-08): manual-entry portfolio demo, separate database/deployment from real company Production; same allowed email, different password. Read docs/PORTFOLIO.md. Preserve original V2 bytes; latest user requirements supersede Excel-first UI. ManualReceipt audits must remain immutable. Excel import is disabled by default server-side. New 202610080001_rate_limit migration must be applied BEFORE deploying this code; not yet applied to live DB. On 2026-10-11 dev pooler still returns tenant/user not found, so live DB/E2E and demo deployment remain pending. Do not overwrite real Production or copy its data/credentials into demo. Next.js patched to 16.3.8; development toolchain advisories remain.
+
 - docs/V2.md is the sole source of truth for this project. Preserve its original text.
 - Follow its 13-step implementation sequence; run tests, lint and typecheck before advancing.
 - Fixed architecture: Next.js App Router, TypeScript, Tailwind CSS, Vercel, Supabase PostgreSQL, Supabase Auth, Prisma.

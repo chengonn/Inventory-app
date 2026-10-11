@@ -19,6 +19,9 @@ import { commitReviewTransaction } from "../../src/lib/review/transaction";
 import { readExport } from "../../src/lib/exports/data";
 import { exportWorkbook } from "../../src/lib/exports/workbook";
 import * as XLSX from "xlsx";
+import { createManualInventory } from "../../src/lib/manual/transaction";
+import { parseManual } from "../../src/lib/manual/validation";
+import { bucketQuery } from "../../src/lib/security/rate-limit";
 
 // Committed races need separate connections. All fixtures live in a newly owned,
 // disposable schema; business inventory and its immutable history are untouched.
@@ -40,7 +43,7 @@ let created = false;
 beforeAll(async () => {
   if (!/^inventory_test_[0-9a-f]{32}$/.test(schema)) throw new Error("Unsafe test schema");
   await admin.query(`CREATE SCHEMA "${schema}"`); created = true;
-  for (const name of ["202609070001_initial_inventory", "202609070002_inventory_integrity"]) {
+  for (const name of ["202609070001_initial_inventory", "202609070002_inventory_integrity", "202610080001_rate_limit"]) {
     const sql = (await readFile(`prisma/migrations/${name}/migration.sql`, "utf8")).replace(/\binventory\b/g, schema);
     await admin.query(sql);
   }
@@ -63,6 +66,49 @@ function input(pair: { itemId: number; locationId: number }, kind = "OUT", quant
 }
 const move = (data: ReturnType<typeof input>) => db.$transaction((tx) => insertMove(tx, actor, data), options);
 const reverse = (originalId: number, requestId = crypto.randomUUID()) => db.$transaction((tx) => insertReversal(tx, actor, { originalId, requestId, note: "fixture reversal" }), options);
+
+function manualInput(quantity = "2.500") {
+  const f = new FormData();
+  for (const [key, value] of Object.entries({ requestId: crypto.randomUUID(), name: `Manual-${crypto.randomUUID()}`, unit: "包", area: "Manual-test", cabinetNo: crypto.randomUUID(), quantity })) f.set(key, value);
+  return parseManual(f);
+}
+it("manual concurrent retries create one item, one move and one receipt", async () => {
+  const input = manualInput();
+  const run = () => db.$transaction((tx) => createManualInventory(tx, actor, input), options);
+  const receipts = await Promise.all([run(), run()]);
+  expect(receipts.filter((r) => r.replayed)).toHaveLength(1);
+  const itemId = receipts[0].itemId;
+  expect(await db.stockMove.count({ where: { itemId } })).toBe(1);
+  expect(await db.auditLog.count({ where: { entityType: "ManualReceipt", entityId: input.requestId } })).toBe(1);
+  const location = await db.location.findUniqueOrThrow({ where: { area_cabinetNo: { area: input.area, cabinetNo: input.cabinetNo } } });
+  expect((await readLocationStock(db, itemId, location.id)).toFixed(3)).toBe("2.500");
+});
+it("manual zero inventory creates one confirmed opening and no move", async () => {
+  const input = manualInput("0");
+  const result = await db.$transaction((tx) => createManualInventory(tx, actor, input), options);
+  expect(await db.stockMove.count({ where: { itemId: result.itemId } })).toBe(0);
+  const opening = await db.openingInventory.findFirstOrThrow({ where: { itemId: result.itemId } });
+  expect(opening.normalizedQty?.toFixed(3)).toBe("0.000");
+  expect(opening.status).toBe("CONFIRMED");
+});
+it("manual failure rolls back masters, stock and audit together", async () => {
+  const input = manualInput();
+  await expect(db.$transaction(async (tx) => {
+    await createManualInventory(tx, actor, input);
+    throw new Error("forced rollback");
+  }, options)).rejects.toThrow("forced rollback");
+  expect(await db.item.count({ where: { name: input.name } })).toBe(0);
+  expect(await db.location.count({ where: { area: input.area, cabinetNo: input.cabinetNo } })).toBe(0);
+  expect(await db.stockMove.count({ where: { moveNo: `MV-${input.requestId}` } })).toBe(0);
+  expect(await db.auditLog.count({ where: { entityType: "ManualReceipt", entityId: input.requestId } })).toBe(0);
+});
+it("rate limit atomically admits only ten concurrent requests", async () => {
+  // A future window avoids crossing a real minute boundary during this test.
+  await db.rateLimitBucket.create({ data: { scope: "login", windowStart: new Date(Date.now() + 60000), count: 0 } });
+  const results = await Promise.all(Array.from({ length: 16 }, () => db.$queryRaw<{ allowed: boolean }[]>(bucketQuery("login"))));
+  expect(results.filter((rows) => rows[0].allowed)).toHaveLength(10);
+  expect((await db.rateLimitBucket.findUniqueOrThrow({ where: { scope: "login" } })).count).toBe(11);
+});
 function countInput(locationId: number, lines: [number, string][], requestId = crypto.randomUUID()) {
   const form = new FormData(); form.set("locationId", String(locationId)); form.set("requestId", requestId); form.set("note", "physical count");
   for (const [itemId, actual] of lines) form.set(`actual-${itemId}`, actual);

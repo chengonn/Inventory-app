@@ -40,6 +40,12 @@ it("deactivation is an update that retains record ID", async () => {
   expect(mocks.update.mock.calls[0][0].data.isActive).toBe(false);
   expect(mocks.create).not.toHaveBeenCalled();
 });
+it("rejects unit changes before updating historical semantics", async () => {
+  const f = form(true); f.set("unit", "公斤");
+  await expect(saveMaster("items", f)).rejects.toThrow("單位不可直接變更");
+  expect(mocks.update).not.toHaveBeenCalled();
+  expect(mocks.audit).not.toHaveBeenCalled();
+});
 it("defaults read results to active, paginates and serializes dates", async () => {
   const result = await listMasters("items", " 紙 ", "active", 2);
   expect(mocks.list.mock.calls[0][0]).toMatchObject({ where: { isActive: true }, skip: 50, take: 51 });

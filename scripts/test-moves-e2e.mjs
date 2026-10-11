@@ -10,6 +10,7 @@ if (!url.hostname.endsWith('.pooler.supabase.com') || url.port !== '6543') throw
 url.search = '';
 const pool = new Pool({ connectionString: url.toString(), max: 2, ssl: { rejectUnauthorized: true, ...(process.env.DATABASE_SSL_CA ? { ca: process.env.DATABASE_SSL_CA.replace(/\\n/g, '\n') } : {}) } });
 const port = 3035;
+const manualOnly = process.argv.includes('--manual-only');
 const importOnly = process.argv.includes('--import-only');
 const reviewOnly = process.argv.includes('--review-only');
 // Never attach to or stop someone else's server.
@@ -17,9 +18,9 @@ await new Promise((resolve, reject) => { const probe = createServer(); probe.onc
 let server, created = false;
 try {
   await pool.query(`CREATE SCHEMA "${schema}"`); created = true;
-  for (const name of ['202609070001_initial_inventory', '202609070002_inventory_integrity']) await pool.query((await readFile(`prisma/migrations/${name}/migration.sql`, 'utf8')).replace(/\binventory\b/g, schema));
+  for (const name of ['202609070001_initial_inventory', '202609070002_inventory_integrity', '202610080001_rate_limit']) await pool.query((await readFile(`prisma/migrations/${name}/migration.sql`, 'utf8')).replace(/\binventory\b/g, schema));
   for (const viewport of ['desktop', 'mobile', 'android']) {
-    if (!importOnly) {
+    if (!importOnly && !manualOnly) {
       const reviewName = `Review-${viewport}`;
       const reviewItem = (await pool.query(`INSERT INTO "${schema}"."Item" (name,unit,"updatedAt") VALUES ($1,'個',now()) RETURNING id`, [reviewName])).rows[0].id;
       const reviewLocation = (await pool.query(`INSERT INTO "${schema}"."Location" (area,"cabinetNo","updatedAt") VALUES ($1,'1',now()) RETURNING id`, [reviewName])).rows[0].id;
@@ -44,7 +45,7 @@ try {
     if (name === 'Q-global') await pool.query(`INSERT INTO "${schema}"."OpeningInventory" ("itemId","locationId","normalizedQty") VALUES ($1,$2,9)`, [id, searchLocations[1]]);
   }
   for (let i = 1; i <= 21; i++) await pool.query(`INSERT INTO "${schema}"."Item" (name,"updatedAt") VALUES ($1,now())`, [`Page-${String(i).padStart(2, '0')}`]);
-  const env = { ...process.env, NEXT_PUBLIC_SUPABASE_URL: 'https://inventory-test.invalid', NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_local_test_only', ALLOWED_USER_EMAIL: 'owner@example.com', E2E_DB_SCHEMA: schema, E2E_MOVES_FIXTURE: '1', E2E_AUTH_FIXTURE: '1', E2E_BASE_URL: `http://127.0.0.1:${port}`, NODE_OPTIONS: '--use-system-ca' };
+  const env = { ...process.env, ENABLE_LEGACY_EXCEL_IMPORT: manualOnly ? 'false' : 'true', E2E_MANUAL_FIXTURE: manualOnly ? '1' : '0', NEXT_PUBLIC_SUPABASE_URL: 'https://inventory-test.invalid', NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_local_test_only', ALLOWED_USER_EMAIL: 'owner@example.com', E2E_DB_SCHEMA: schema, E2E_MOVES_FIXTURE: '1', E2E_AUTH_FIXTURE: '1', E2E_BASE_URL: `http://127.0.0.1:${port}`, NODE_OPTIONS: '--use-system-ca' };
   server = spawn(process.execPath, ['--require', './tests/fixtures/moves-transport.cjs', 'node_modules/next/dist/bin/next', 'dev', '--hostname', '127.0.0.1', '--port', String(port)], { env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] });
   // Keep raw server errors (which may contain DB details) out of console output.
   let serverLog = '';
@@ -62,21 +63,34 @@ try {
   }
   if (!ready) throw new Error('Isolated server not ready');
   console.log('Isolated browser server ready; testing desktop and two mobile viewports.');
-  const child = spawn(process.execPath, ['node_modules/@playwright/test/cli.js', 'test', ...(importOnly ? ['tests/e2e/import.spec.ts'] : reviewOnly ? ['tests/e2e/review-export.spec.ts'] : []), '--workers=1'], { env, windowsHide: true, stdio: 'inherit' });
-  const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', resolve); });
+  let code = 0;
+  for (const project of ['desktop', 'mobile', 'android']) {
+    // Reset only ephemeral test quotas between independent viewport scenarios.
+    // The application limiter remains enabled; no production bypass is added.
+    await pool.query(`TRUNCATE "${schema}"."RateLimitBucket"`);
+    const child = spawn(process.execPath, ['node_modules/@playwright/test/cli.js', 'test', ...(manualOnly ? ['tests/e2e/manual.spec.ts'] : importOnly ? ['tests/e2e/import.spec.ts'] : reviewOnly ? ['tests/e2e/review-export.spec.ts'] : []), '--workers=1', '--project', project], { env, windowsHide: true, stdio: 'inherit' });
+    code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', resolve); });
+    if (code !== 0) break;
+  }
   if (code !== 0) process.exitCode = 1;
   const result = await pool.query(`SELECT (SELECT count(*) FROM "${schema}"."StockMove")::int AS moves,(SELECT count(*) FROM "${schema}"."AuditLog" WHERE "entityType"='StockMove')::int AS audits`);
-  const expectedMoves = importOnly ? 3 : reviewOnly ? 6 : 27;
+  const expectedMoves = manualOnly || importOnly ? 3 : reviewOnly ? 6 : 27;
   if (code === 0 && (result.rows[0].moves !== expectedMoves || result.rows[0].audits !== expectedMoves)) throw new Error('Browser commit/audit verification failed');
   console.log(`Isolated DB verification: ${result.rows[0].moves} moves, ${result.rows[0].audits} audits.`);
   const counts = await pool.query(`SELECT count(*)::int n FROM "${schema}"."AuditLog" WHERE "entityType"='Stocktake'`);
-  if (code === 0 && counts.rows[0].n !== (importOnly || reviewOnly ? 0 : 6)) throw new Error('Stocktake receipt audit verification failed');
+  if (code === 0 && counts.rows[0].n !== (manualOnly || importOnly || reviewOnly ? 0 : 6)) throw new Error('Stocktake receipt audit verification failed');
   console.log(`Stocktake receipt audits: ${counts.rows[0].n}.`);
   const batches = await pool.query(`SELECT count(*)::int n FROM "${schema}"."ImportBatch"`);
-  if (code === 0 && batches.rows[0].n !== (reviewOnly ? 0 : 3)) throw new Error('Import batch duplicate verification failed');
+  if (code === 0 && batches.rows[0].n !== (manualOnly || reviewOnly ? 0 : 3)) throw new Error('Import batch duplicate verification failed');
   console.log(`Import batches: ${batches.rows[0].n}.`);
   const reviewReceipts = await pool.query(`SELECT count(*)::int n FROM "${schema}"."AuditLog" WHERE "entityType"='ReviewReceipt'`);
-  if (code === 0 && reviewReceipts.rows[0].n !== (importOnly ? 0 : 9)) throw new Error('Review receipt audit verification failed');
+  if (code === 0 && reviewReceipts.rows[0].n !== (manualOnly || importOnly ? 0 : 9)) throw new Error('Review receipt audit verification failed');
+  if (manualOnly && code === 0) {
+    const manual = await pool.query(`SELECT count(*)::int n FROM "${schema}"."AuditLog" WHERE "entityType"='ManualReceipt'`);
+    if (manual.rows[0].n !== 6) throw new Error('Manual receipt verification failed');
+    const zero = await pool.query(`SELECT count(*)::int n FROM "${schema}"."OpeningInventory" o JOIN "${schema}"."Item" i ON i.id=o."itemId" WHERE i.name LIKE 'Manual-%-zero' AND o.status='CONFIRMED' AND o."normalizedQty"=0`);
+    if (zero.rows[0].n !== 3) throw new Error('Manual zero opening verification failed');
+  }
   console.log(`Review receipts: ${reviewReceipts.rows[0].n}.`);
 } finally {
   if (server?.pid && server.exitCode === null) {

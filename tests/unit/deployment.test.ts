@@ -6,6 +6,7 @@ vi.mock("../../src/lib/prisma", () => ({ getPrisma: mocks.db }));
 import { mutationsBlocked } from "../../src/lib/deployment";
 import { commitMove, reverseMove } from "../../src/lib/moves/service";
 import { saveMaster } from "../../src/lib/master-data/service";
+import { saveManualInventory } from "../../src/lib/manual/service";
 import { confirmReview } from "../../src/lib/review/service";
 import * as stocktake from "../../src/lib/stocktake/service";
 import * as imports from "../../src/lib/imports/service";
@@ -17,6 +18,8 @@ it.each(["preview", "readonly"])("%s rejects business writes before database acc
   for (const run of [() => commitMove("IN", new FormData()), () => reverseMove(new FormData()), () => saveMaster("items", new FormData()), () => confirmReview(new FormData()), () => stocktake.confirmStocktake(new FormData()), () => imports.previewImport(new FormData()), () => imports.confirmImport(new FormData())]) {
     await expect(run()).rejects.toThrow("僅供查詢");
   }
+  expect(mocks.db).not.toHaveBeenCalled(); expect(mocks.auth).not.toHaveBeenCalled();
+  await expect(saveManualInventory(new FormData())).rejects.toThrow("僅供查詢");
   expect(mocks.db).not.toHaveBeenCalled(); expect(mocks.auth).not.toHaveBeenCalled();
 });
 it("production and local still require fresh authentication", async () => {

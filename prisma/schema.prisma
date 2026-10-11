@@ -174,3 +174,12 @@ model AuditLog {
   @@index([createdAt])
   @@schema("inventory")
 }
+
+// Fixed scopes only: no emails, IPs, tokens, or unbounded attacker-controlled keys.
+model RateLimitBucket {
+  scope       String   @id
+  windowStart DateTime @db.Timestamptz(3)
+  count       Int
+
+  @@schema("inventory")
+}

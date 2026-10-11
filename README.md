@@ -1,5 +1,7 @@
 # 庫存管理 Web App V2
 
+> **2026-10-11 展示版調整**：手動輸入品項、數量、單位與位置，不需要 Excel。使用者選擇獨立展示環境，相同 Email、不同密碼，原正式庫存保留。最新功能、安全限制及待完成驗收見 [展示版說明](docs/PORTFOLIO.md)。以下進度文字包含歷史階段紀錄。
+
 > 2026-09-08 更新：Supabase 開發專案已建立，兩份 migration 已套用，runtime pooled connection 與完整 4 項雲端 smoke test 已通過。最新狀態見 [真實連線報告](docs/STEP-03-LIVE.md)。以下未設定專案的敘述為先前離線階段紀錄。
 
 本專案唯一規格來源為 [docs/V2.md](docs/V2.md)，原文複製自下載資料夾的「庫存管理系統_Codex實作規格_雲端版V2.md」。V1 的 SQLite、Windows/LAN Server 與 PIN 登入規格全部失效。
