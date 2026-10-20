@@ -1,9 +1,14 @@
+import { GUEST_COOKIE } from "@/lib/auth/guest";
 import "server-only";
 
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { isAuthRetryableFetchError } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
-import { getAuthCookieOptions, getSupabaseConfig, SupabaseConfigurationError } from "./config";
+import {
+  getAuthCookieOptions,
+  getSupabaseConfig,
+  SupabaseConfigurationError,
+} from "./config";
 import { applyAuthHeaders, preventAuthCaching } from "./response";
 import { verifyActor } from "@/lib/auth/policy";
 
@@ -13,7 +18,10 @@ export async function updateSession(request: NextRequest) {
   preventAuthCaching(response.headers);
   try {
     const { url, publishableKey } = getSupabaseConfig();
-    const pending = new Map<string, { value: string; options: CookieOptions }>();
+    const pending = new Map<
+      string,
+      { value: string; options: CookieOptions }
+    >();
     const savedHeaders: Record<string, string> = {};
     const supabase = createServerClient(url, publishableKey, {
       cookieOptions: getAuthCookieOptions(),
@@ -28,7 +36,9 @@ export async function updateSession(request: NextRequest) {
           // Forward fresh cookies to downstream Server Components, not to
           // browser response headers. Preserve ALL earlier writes/chunks.
           response = NextResponse.next({ request });
-          pending.forEach(({ value, options }, name) => response.cookies.set(name, value, options));
+          pending.forEach(({ value, options }, name) =>
+            response.cookies.set(name, value, options),
+          );
           // SSR 0.12 sends cache headers only on the first cookie write.
           applyAuthHeaders(response.headers, savedHeaders);
         },
@@ -37,19 +47,33 @@ export async function updateSession(request: NextRequest) {
 
     // Must run immediately, before rendering. Never authorize with getSession.
     const { data, error } = await supabase.auth.getClaims();
-    if (error && (isAuthRetryableFetchError(error) || error.status === 429 || (error.status ?? 0) >= 500)) {
+    if (
+      error &&
+      (isAuthRetryableFetchError(error) ||
+        error.status === 429 ||
+        (error.status ?? 0) >= 500)
+    ) {
       return unavailable(response, "登入服務暫時無法使用，請稍後重試。");
     }
     if (data?.claims?.sub) {
-      const actor = await verifyActor(supabase);
-      if (actor.status === "unavailable") return unavailable(response, "登入服務或白名單設定暫時無法使用。");
+      const actor = await verifyActor(supabase, request.cookies.get(GUEST_COOKIE)?.value ?? "");
+      if (actor.status === "unavailable")
+        return unavailable(response, "登入服務或白名單設定暫時無法使用。");
       if (actor.status === "forbidden") {
-        const { error: signOutError } = await supabase.auth.signOut({ scope: "local" });
-        if (signOutError) return unavailable(response, "無法清除未授權 session，請稍後重試。");
+        const { error: signOutError } = await supabase.auth.signOut({
+          scope: "local",
+        });
+        if (signOutError)
+          return unavailable(response, "無法清除未授權 session，請稍後重試。");
         const denied = request.nextUrl.pathname.startsWith("/api/")
           ? new NextResponse(null, { status: 403 })
-          : NextResponse.redirect(new URL("/login?reason=forbidden", request.url), 303);
-        response.cookies.getAll().forEach((cookie) => denied.cookies.set(cookie));
+          : NextResponse.redirect(
+              new URL("/login?reason=forbidden", request.url),
+              303,
+            );
+        response.cookies
+          .getAll()
+          .forEach((cookie) => denied.cookies.set(cookie));
         preventAuthCaching(denied.headers);
         return denied;
       }
@@ -57,9 +81,12 @@ export async function updateSession(request: NextRequest) {
     // Page and API guards independently authorize; Proxy is not the only gate.
     return response;
   } catch (error) {
-    return unavailable(response, error instanceof SupabaseConfigurationError
-      ? error.message
-      : "登入服務暫時無法使用，請稍後重試。");
+    return unavailable(
+      response,
+      error instanceof SupabaseConfigurationError
+        ? error.message
+        : "登入服務暫時無法使用，請稍後重試。",
+    );
   }
 }
 

@@ -28,7 +28,9 @@ async function createRequestClient(writable: boolean) {
         if (!writable) return;
         // Next.js headers() is read-only. Proxy unconditionally sets the same
         // no-store headers for ALL matched routes, including Server Actions.
-        cookiesToSet.forEach(({ name, value, options }) => store.set(name, value, options));
+        cookiesToSet.forEach(({ name, value, options }) =>
+          store.set(name, value, options),
+        );
       },
     },
   });

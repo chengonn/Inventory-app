@@ -11,3 +11,9 @@ it.each(["anonymous", "forbidden", "unavailable"])("%s cannot read or mutate rev
   for (const run of [() => reviewQueue({}), () => previewReview(new FormData()), () => confirmReview(new FormData()), () => browseMoves({})]) await expect(run()).rejects.toThrow("沒有交易權限");
   expect(mocks.db).not.toHaveBeenCalled();
 });
+
+it("rejects guest administrative operations before business DB access", async () => {
+  mocks.verify.mockResolvedValue({status:"allowed", actor:{id:"visitor", email:"visitor@example.invalid", role:"guest"}});
+  for (const run of [() => reviewQueue({}), () => previewReview(new FormData()), () => confirmReview(new FormData())]) await expect(run()).rejects.toThrow("管理者");
+  expect(mocks.db).not.toHaveBeenCalled();
+});

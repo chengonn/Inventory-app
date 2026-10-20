@@ -2,14 +2,21 @@ import "server-only";
 import { Prisma } from "@/generated/prisma/client";
 
 export function inventoryId(value: number) {
-  if (!Number.isSafeInteger(value) || value <= 0 || value > 2147483647) throw new Error("庫存查詢編號無效。");
+  if (!Number.isSafeInteger(value) || value <= 0 || value > 2147483647)
+    throw new Error("庫存查詢編號無效。");
   return value;
 }
 
-/** One SQL statement = one PostgreSQL snapshot. Never join the two ledgers. */
+/** 同一 SQL snapshot 合併兩份帳本；用 UNION ALL 避免 JOIN 將多筆期初與異動重複相乘。 */
 export function stockQuery(itemId?: number, locationId?: number) {
-  const item = itemId === undefined ? Prisma.empty : Prisma.sql`AND "itemId" = ${inventoryId(itemId)}`;
-  const location = locationId === undefined ? Prisma.empty : Prisma.sql`AND "locationId" = ${inventoryId(locationId)}`;
+  const item =
+    itemId === undefined
+      ? Prisma.empty
+      : Prisma.sql`AND "itemId" = ${inventoryId(itemId)}`;
+  const location =
+    locationId === undefined
+      ? Prisma.empty
+      : Prisma.sql`AND "locationId" = ${inventoryId(locationId)}`;
   return Prisma.sql`
     WITH ledger AS (
       SELECT "itemId", "locationId", "normalizedQty" AS opening, 0::numeric AS movement
@@ -26,12 +33,23 @@ export function stockQuery(itemId?: number, locationId?: number) {
     FROM pairs ORDER BY "itemId", "locationId"`;
 }
 
-export type StockRow = { itemId: number; locationId: number; openingQty: Prisma.Decimal; movementQty: Prisma.Decimal; currentQty: Prisma.Decimal; itemTotalQty: Prisma.Decimal };
+export type StockRow = {
+  itemId: number;
+  locationId: number;
+  openingQty: Prisma.Decimal;
+  movementQty: Prisma.Decimal;
+  currentQty: Prisma.Decimal;
+  itemTotalQty: Prisma.Decimal;
+};
 
 /** Internal helper for future authorized transaction services. Does NOT lock.
  * Step 7 must acquire per-pair locks BEFORE reading and writing stock.
  */
-export async function readLocationStock(tx: Prisma.TransactionClient, itemId: number, locationId: number) {
+export async function readLocationStock(
+  tx: Prisma.TransactionClient,
+  itemId: number,
+  locationId: number,
+) {
   const rows = await tx.$queryRaw<StockRow[]>(stockQuery(itemId, locationId));
   return rows[0]?.currentQty ?? new Prisma.Decimal(0);
 }

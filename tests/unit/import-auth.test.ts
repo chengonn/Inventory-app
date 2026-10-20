@@ -25,3 +25,10 @@ it("manual mode denies both import stages before any database or workbook access
   for (const run of [previewImport, confirmImport]) await expect(run(new FormData())).rejects.toThrow("Excel 匯入已停用");
   expect(mocks.db).not.toHaveBeenCalled();
 });
+
+it("rejects guest administrative operations before business DB access", async () => {
+  mocks.verify.mockResolvedValue({status:"allowed", actor:{id:"visitor", email:"visitor@example.invalid", role:"guest"}});
+  vi.stubEnv("ENABLE_LEGACY_EXCEL_IMPORT", "true");
+  for (const run of [() => previewImport(new FormData()), () => confirmImport(new FormData()), importHistory]) await expect(run()).rejects.toThrow("管理者");
+  expect(mocks.db).not.toHaveBeenCalled();
+});

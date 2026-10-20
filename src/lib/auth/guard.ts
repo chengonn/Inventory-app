@@ -7,7 +7,17 @@ import { verifyActor } from "./policy";
 export async function requirePageActor() {
   const result = await verifyActor(await createClient());
   if (result.status !== "allowed" || !result.actor) {
-    redirect(result.status === "anonymous" ? "/login" : `/login?reason=${result.status}`);
+    redirect(
+      result.status === "anonymous"
+        ? "/login"
+        : `/login?reason=${result.status}`,
+    );
   }
   return result.actor;
+}
+
+export async function requireManagerPage() {
+  const actor = await requirePageActor();
+  if (actor.role === "guest") redirect("/inventory");
+  return actor;
 }

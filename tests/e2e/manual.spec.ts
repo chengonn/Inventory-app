@@ -1,7 +1,12 @@
 import { test, expect } from "@playwright/test";
 
-test("manual inventory, duplicate protection, zero stock and export-only UI work on this viewport", async ({ page }, info) => {
-  test.skip(process.env.E2E_MANUAL_FIXTURE !== "1", "Requires isolated manual runner");
+test("manual inventory, duplicate protection, zero stock and export-only UI work on this viewport", async ({
+  page,
+}, info) => {
+  test.skip(
+    process.env.E2E_MANUAL_FIXTURE !== "1",
+    "Requires isolated manual runner",
+  );
   test.setTimeout(90000);
   await page.goto("/login");
   await page.getByLabel("Email", { exact: true }).fill("owner@example.com");
@@ -16,14 +21,61 @@ test("manual inventory, duplicate protection, zero stock and export-only UI work
     await page.getByLabel("單位", { exact: true }).fill("包");
     await page.getByLabel("區域", { exact: true }).fill("展示辦公室");
     await page.getByLabel("位置", { exact: true }).fill(info.project.name);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    if (item === name && amount === "2.5") await page.screenshot({ path: `test-results/manual-${info.project.name}.png`, fullPage: true });
-    await page.getByRole("button", { name: "建立品項與初始庫存", exact: true }).click();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+    if (item === name && amount === "2.5")
+      await page.screenshot({
+        path: `test-results/manual-${info.project.name}.png`,
+        fullPage: true,
+      });
+    if (item === name && amount === "2.5") {
+      await page
+        .getByRole("combobox", { name: "語言 / Language", exact: true })
+        .selectOption("en");
+      await expect(page.locator("html")).toHaveAttribute("lang", "en");
+      await expect(
+        page.getByRole("heading", { name: "Add item & stock", exact: true }),
+      ).toBeVisible();
+      await expect(page.getByLabel("Item name", { exact: true })).toHaveValue(
+        item,
+      );
+      await expect(
+        page.getByLabel("Initial quantity", { exact: true }),
+      ).toHaveValue(amount);
+      await expect(page.getByLabel("Unit", { exact: true })).toHaveValue("包");
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= innerWidth,
+        ),
+      ).toBe(true);
+      await page
+        .getByRole("button", {
+          name: "Create item & initial stock",
+          exact: true,
+        })
+        .click();
+      await expect(page.getByRole("status")).toContainText(
+        "Item and stock created",
+      );
+      await page
+        .getByRole("combobox", { name: "語言 / Language", exact: true })
+        .selectOption("zh-Hant");
+      await expect(page.getByRole("status")).toContainText("已建立品項與庫存");
+      return;
+    }
+    await page
+      .getByRole("button", { name: "建立品項與初始庫存", exact: true })
+      .click();
   };
   await fill(name, "2.5");
   await expect(page.getByRole("status")).toContainText("已建立品項與庫存");
   await fill(name, "99");
-  await expect(page.getByRole("main").getByRole("alert")).toContainText("補貨請使用入庫");
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(
+    "補貨請使用入庫",
+  );
   await expect(page.getByLabel("初始數量", { exact: true })).toHaveValue("99");
   await expect(page.getByLabel("品項名稱", { exact: true })).toHaveValue(name);
   await fill(`${name}-zero`, "0");
@@ -31,6 +83,8 @@ test("manual inventory, duplicate protection, zero stock and export-only UI work
   await page.goto(`/inventory?q=${encodeURIComponent(name)}`);
   await expect(page.getByRole("main")).toContainText(name);
   await page.goto("/import-export");
-  await expect(page.getByRole("heading", { name: "匯出備份", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "匯出備份", exact: true }),
+  ).toBeVisible();
   await expect(page.getByLabel("Excel 檔案", { exact: true })).toHaveCount(0);
 });

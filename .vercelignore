@@ -9,3 +9,6 @@ coverage
 *.log
 *.xlsx
 *.tsbuildinfo
+scripts/set-demo-app-password.ps1
+scripts/setup-guest-account.ps1
+scripts/create-guest-account.mjs

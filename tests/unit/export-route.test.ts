@@ -8,6 +8,13 @@ vi.mock("../../src/lib/supabase/route-handler", () => ({ createRouteClient: (_re
 import { GET } from "../../src/app/api/export/route";
 import { enforceRateLimit, RateLimitError } from "../../src/lib/security/rate-limit";
 afterEach(() => vi.resetAllMocks());
+it.each(["backup", "inventory", "moves"])("guest cannot export %s even by direct API request", async (kind) => {
+  mocks.verify.mockResolvedValue({ status: "allowed", actor: { id: "guest", email: "visitor@example.invalid", role: "guest" } });
+  const response = await GET(new NextRequest(`https://app.invalid/api/export?kind=${kind}`));
+  expect(response.status).toBe(403);
+  expect(response.headers.get("cache-control")).toContain("no-store");
+  expect(mocks.db).not.toHaveBeenCalled(); expect(mocks.read).not.toHaveBeenCalled();
+});
 it("returns 429 and Retry-After without exporting when the quota is exhausted", async () => {
   mocks.verify.mockResolvedValue({ status: "allowed" });
   vi.mocked(enforceRateLimit).mockRejectedValueOnce(new RateLimitError("操作次數過多"));

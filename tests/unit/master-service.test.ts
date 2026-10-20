@@ -51,3 +51,9 @@ it("defaults read results to active, paginates and serializes dates", async () =
   expect(mocks.list.mock.calls[0][0]).toMatchObject({ where: { isActive: true }, skip: 50, take: 51 });
   expect(result.rows[0].version).toBe(row.updatedAt.toISOString());
 });
+
+it("rejects guest administrative operations before business DB access", async () => {
+  mocks.verify.mockResolvedValue({status:"allowed", actor:{id:"visitor", email:"visitor@example.invalid", role:"guest"}});
+  for (const run of [() => saveMaster("items", form()), () => listMasters("items", "", "active", 1)]) await expect(run()).rejects.toThrow("管理者");
+  expect(mocks.prisma).not.toHaveBeenCalled();
+});

@@ -15,3 +15,9 @@ it("validates before opening transaction and uses fresh verified actor", async (
   await expect(commitMove("IN", new FormData())).rejects.toThrow();
   expect(mocks.db).not.toHaveBeenCalled();
 });
+
+it("rejects guest administrative operations before business DB access", async () => {
+  mocks.verify.mockResolvedValue({status:"allowed", actor:{id:"visitor", email:"visitor@example.invalid", role:"guest"}});
+  await expect(reverseMove(new FormData())).rejects.toThrow("管理者");
+  expect(mocks.db).not.toHaveBeenCalled();
+});

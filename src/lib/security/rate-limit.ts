@@ -4,6 +4,7 @@ import { getPrisma } from "@/lib/prisma";
 import { MoveError } from "@/lib/moves/validation";
 
 const limits = { login: 10, write: 60, export: 5 } as const;
+// 每分鐘全站共用額度，刻意符合單帳號展示用途，並非每位訪客各有一份額度。
 export type RateScope = keyof typeof limits;
 export class RateLimitError extends MoveError {}
 
@@ -24,11 +25,19 @@ export function bucketQuery(scope: RateScope) {
 }
 
 export async function enforceRateLimit(scope: RateScope) {
-  const rows = await getPrisma().$transaction(async (tx) => {
-    await tx.$executeRaw`SET LOCAL lock_timeout = '1s'`;
-    await tx.$executeRaw`SET LOCAL statement_timeout = '2s'`;
-    return tx.$queryRaw<{ allowed: boolean }[]>(bucketQuery(scope));
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, maxWait: 2000, timeout: 4000 });
-  // Throw AFTER commit: rejected attempts cannot roll back the shared counter.
-  if (rows[0]?.allowed !== true) throw new RateLimitError("操作次數過多，請等候一分鐘再試。");
+  const rows = await getPrisma().$transaction(
+    async (tx) => {
+      await tx.$executeRaw`SET LOCAL lock_timeout = '1s'`;
+      await tx.$executeRaw`SET LOCAL statement_timeout = '2s'`;
+      return tx.$queryRaw<{ allowed: boolean }[]>(bucketQuery(scope));
+    },
+    {
+      isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+      maxWait: 2000,
+      timeout: 4000,
+    },
+  );
+  // 必須在 commit 後才回報超額，否則 rollback 會讓拒絕的請求不被計數。
+  if (rows[0]?.allowed !== true)
+    throw new RateLimitError("操作次數過多，請等候一分鐘再試。");
 }

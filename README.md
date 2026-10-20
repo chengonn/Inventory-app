@@ -1,5 +1,9 @@
 # 庫存管理 Web App V2
 
+第一次閱讀原始碼，請從 [程式碼閱讀指南](docs/CODE-READING.md) 開始：依照表單、Server Action、Service、Transaction 的順序理解手動建檔及庫存保護。
+
+訪客體驗的權限、CIA 修正與部署驗收，見 [訪客安全審查](docs/GUEST-CIA.md)。2026-10-20 展示站已提供訪客帳密及中英切換，實作與遠端驗收見 [訪客登入與中英介面](docs/LANGUAGE-AND-GUEST-LOGIN.md)。
+
 > **2026-10-11 展示版調整**：手動輸入品項、數量、單位與位置，不需要 Excel。使用者選擇獨立展示環境，相同 Email、不同密碼，原正式庫存保留。最新功能、安全限制及待完成驗收見 [展示版說明](docs/PORTFOLIO.md)。以下進度文字包含歷史階段紀錄。
 
 > 2026-09-08 更新：Supabase 開發專案已建立，兩份 migration 已套用，runtime pooled connection 與完整 4 項雲端 smoke test 已通過。最新狀態見 [真實連線報告](docs/STEP-03-LIVE.md)。以下未設定專案的敘述為先前離線階段紀錄。

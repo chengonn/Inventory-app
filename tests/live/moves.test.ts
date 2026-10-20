@@ -458,3 +458,39 @@ it("read-only RepeatableRead overview remains consistent across a concurrent com
   }, { ...options, isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
   expect((await overview()).rows.find((r) => r.id === pair.itemId)?.current).toBe("12.000");
 });
+
+
+it("guest capacity serializes concurrent writes and still permits successful-request replay", async () => {
+  const guest = { id: "guest-budget-test", email: "guest-budget@example.invalid", role: "guest" as const };
+  const pair = await fixture("10");
+  await db.auditLog.createMany({ data: Array.from({length:1999}, () => ({action:"TEST",entityType:"Test",actorEmail:guest.email})) });
+  const first = input(pair,"OUT","1"), second = input(pair,"OUT","1");
+  const run = (data: ReturnType<typeof input>) => db.$transaction(tx => insertMove(tx,guest,data),options);
+  const results = await Promise.allSettled([run(first),run(second)]);
+  expect(results.filter(r => r.status === "fulfilled")).toHaveLength(1);
+  expect(await db.auditLog.count({where:{actorEmail:guest.email}})).toBe(2000);
+  expect((await readLocationStock(db,pair.itemId,pair.locationId)).toFixed(3)).toBe("9.000");
+  const accepted = results[0].status === "fulfilled" ? first : second;
+  expect((await run(accepted)).replayed).toBe(true);
+});
+
+it("guest manual retry preserves exactly one item and one receipt", async () => {
+  const guest = { id:"guest-manual-test", email:"guest-manual@example.invalid", role:"guest" as const };
+  const data = manualInput();
+  const run = () => db.$transaction(tx => createManualInventory(tx,guest,data),options);
+  const results = await Promise.all([run(),run()]);
+  expect(results.filter(r => r.replayed)).toHaveLength(1);
+  expect(await db.item.count({where:{name:data.name}})).toBe(1);
+  expect(await db.auditLog.count({where:{actorEmail:guest.email,entityType:"ManualReceipt"}})).toBe(1);
+});
+
+it("guest zero-difference stocktake is bounded by capacity and remains idempotent", async () => {
+  const guest = { id:"guest-count-test", email:"guest-count@example.invalid", role:"guest" as const };
+  const pair = await fixture("10");
+  const data = countInput(pair.locationId,[[pair.itemId,"10"]]);
+  const run = () => db.$transaction(tx => commitStocktakeTransaction(tx,guest,data),options);
+  await run();
+  await db.auditLog.createMany({ data:Array.from({length:1999},() => ({action:"TEST",entityType:"Test",actorEmail:guest.email})) });
+  expect((await run()).replayed).toBe(true);
+  await expect(db.$transaction(tx => commitStocktakeTransaction(tx,guest,countInput(pair.locationId,[[pair.itemId,"10"]])),options)).rejects.toThrow("容量上限");
+});

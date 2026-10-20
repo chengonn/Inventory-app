@@ -23,7 +23,7 @@
 
 ## 展示版部署門檻
 
-- 使用者已同意獨立展示版；目前尚待選定恢復開發專案或新建專案。不要把目前 `.env.production.local` 上傳為展示環境設定。
+- 使用者已同意恢復 inventory-v2-dev 作為獨立展示庫，並已恢復。不要把目前 `.env.production.local` 上傳為展示環境設定。
 - 新建獨立 Vercel 專案，以其 Production deployment 供互動展示。現有 Vercel Preview 永遠唯讀，不能為了展示移除 guard。
 - 使用相同 Email 建立展示 Supabase Auth 使用者，密碼與正式環境不同。關閉 signup/anonymous，Data API 不開放 inventory schema。密碼不進 Git、README 或本對話。
 - 設定展示专案的 publishable URL/key、transaction pooler DATABASE_URL、server-only ALLOWED_USER_EMAIL、TLS CA，`INVENTORY_DEMO=true`、`ENABLE_LEGACY_EXCEL_IMPORT=false`。DIRECT_URL 僅 migration 使用，不上傳 runtime。
@@ -44,9 +44,13 @@
 ## 驗證記錄
 
 - 本機 `npm test`：299 passed、1 private-source skipped（原 Excel 不需要提供）。包含 PostgreSQL WASM 的限流 migration/SQL/權限測試，不等同 Supabase migration 已執行。
-- 真實 Supabase 測試嘗試：`tests/live/moves.test.ts -t "manual|rate limit"` 在 CREATE SCHEMA 前遭 pooler 拒絕，錯誤 tenant/user not found。新 migration 尚未套用至開發/展示/正式 DB，並發/回滾 live 驗收尚未通過。
+- 2026-10-11 恢復 inventory-v2-dev 後，`npm run db:migrate:deploy` 成功套用 `202610080001_rate_limit`；三份 migrations checksum 與八張表 RLS 驗證通過。原公司正式 DB 未套用本次變更。
+- 真實 DB 測試：40 passed、2 private-source skipped；手動新增及限流 focused live tests 4 passed。`npm run test:e2e:manual` 三個 viewport 全數通過並清理 disposable schema。舊流程完整 E2E 的最終測試 artifact 顯示 passed；未保留其最終 stdout，故不以此宣稱額外的 DB 計數驗證。
+- `npm run lint`、`npm run typecheck`、production build 通過。2026-10-11 runtime audit 0；完整 audit 仍有上述 5 high 開發依賴問題。
 - `docs/V2.md` 與兩個舊 migrations SHA-256 均與既有紀錄一致；Git 追蹤的環境檔只有 `.env.example`，沒有原 Excel。
-- 展示環境尚未部署，現有正式部署與業務資料沒有更動。部署前必須通過上面的真實 DB/E2E 門檻。
+- 獨立展示站已部署：https://inventory-portfolio-lac.vercel.app ，deployment `dpl_HThcXWXV7cDTggJP7AUt8F8F1cfL` READY，remote build 通過。`node --use-system-ca scripts/production-smoke.mjs https://inventory-portfolio-lac.vercel.app`：16/16 通過；另外確認手動建檔頁未登入會跳轉及安全 headers。展示 Auth signup 與 anonymous 均關閉。
+- 使用者已確認透過本機 `scripts/set-demo-app-password.ps1` 設定新展示密碼；此工具限定展示 project/user、不保存金鑰密碼，且排除於 Vercel upload。真實展示帳號登入與遠端手動庫存操作驗收仍待完成，匿名 smoke 不等同完整功能驗收。
+- 現有公司正式部署與業務資料沒有更動。`.vercel/project.json` 仍指向原專案，展示部署務必明確指定 `--project prj_f6cLtMTAy1XibgKGksOCOJEnJE8X`，避免誤部署。
 
 ## 官方依據
 
@@ -54,3 +58,11 @@
 - [Supabase Auth rate limits](https://supabase.com/docs/guides/auth/rate-limits)
 - [Next.js ImageResponse security advisory](https://github.com/vercel/next.js/security/advisories/GHSA-vcvr-r3jv-pc5j)
 - Next.js Server Actions 指引以實際安裝版本 `node_modules/next/dist/docs/01-app/02-guides/server-actions.md` 為準。
+
+## 2026-10-11 展示站真實登入後驗收
+
+- 使用者確認已設定獨立展示密碼並登入；代理在新的受保護頁確認 session 有效，重新整理仍保留登入。
+- 真實 HTTPS UI：手動建立虛構品項「展示驗收・筆記本 20261011」，初始 10 本；入庫 5 → 15；超量出庫 16 被拒絕；出庫 3 → 12；盤點實際 11 → 盤損 1。重新整理庫存頁顯示 11 本。
+- 展示 DB READ ONLY 核對：四筆 CONFIRMED StockMoves，signedQty 分別 10、5、-3、-1；四筆 StockMove audits、一筆 ManualReceipt、一筆 Stocktake receipt，以及 Item/Location audits 各一筆。虛構展示資料保留供體驗，沒有 hard delete。
+- 本輪修改僅驗收文件，無新增 migration 或 runtime 程式碼；沿用前次本機 tests/lint/typecheck/build 通過結果，沒有聲稱本輪重跑。截圖保存在 ignored test-results/portfolio-live-stock.jpg。
+- 本次未重做展示站實體手機／電腦關機、登出後重新登入、遠端並發與所有拒絕路徑。並發與重送由先前 live disposable-schema tests 覆蓋；不把本次 smoke 當成完整滲透測試。

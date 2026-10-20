@@ -6,7 +6,10 @@ import { getAuthCookieOptions, getSupabaseConfig } from "./config";
 import { applyAuthHeaders, preventAuthCaching } from "./response";
 
 /** Return this exact response after awaiting auth; replacing it loses cookies. */
-export function createRouteClient(request: NextRequest, response: NextResponse) {
+export function createRouteClient(
+  request: NextRequest,
+  response: NextResponse,
+) {
   const { url, publishableKey } = getSupabaseConfig();
   preventAuthCaching(response.headers);
   return createServerClient(url, publishableKey, {
